@@ -1,0 +1,199 @@
+//Commentary 8/27/2020
+//**Same as pharmcount_dir, meant to debug in case an activity is mislabeled.**
+//This script will determine the amount of active compounds for a receptor given
+//a receptor name as a string (receptor). Offsets will differ depending on how
+//the fields are formatted in the databases used, but default offsets are:
+//offset1: 1
+//offset2: 2
+//offset3: 3
+//offset4: 4
+//offset5: 5
+
+global function pharmcount_dir_select [receptor, offset1,offset2,offset3,offset4,offset5]
+Close [force:1, viewreset:1, delgobj:1];        // close any open structures
+
+local entry_key, entry_record, values, index, mdb, output_token;
+local files = flist [[],'*.mdb'];
+local output = flist [[],'*_output.mdb'];
+files = diff[files,output];
+files = last files;
+local count = 0;
+local prior_mseq = 0;
+local i=0;
+
+
+for mdb in files loop
+	local mdb_key = db_Open [mdb, 'read'];
+	local entries = db_Entries mdb_key;
+	local report_file = tok_cat[fbase mdb, '_pharmcount.txt'];	
+	//print mdb;
+	local sum = [];
+	
+for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+	entry_record = db_Read [mdb_key, entry_key]; 
+	values = last untag entry_record; // removes tags from tagged vector, just values
+
+	if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+		prior_mseq = values(2);
+		for index in values loop // for each mseq in all mseqs
+			i=i+1;
+			if eqL [receptor, index] then // if the top level arguments are identical AND 
+				if values(i-offset1)  then
+					count = count+1;
+					dbv_EntrySetSelected [ mdb, entry_key, 1 ];
+				endif
+			endif
+
+		endloop
+		i=0;
+	endif
+	
+//	print entry_record;
+
+endloop
+
+//print count; // print how many 
+sum = cat[sum,count];
+count = 0;
+prior_mseq= 0;
+i=0;
+
+for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+	entry_record = db_Read [mdb_key, entry_key]; 
+	values = last untag entry_record; // removes tags from tagged vector, just values
+
+	if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+		prior_mseq = values(2);
+		for index in values loop // for each mseq in all mseqs
+			i=i+1;
+			if eqL [receptor, index] then // if the top level arguments are identical AND 
+				if values(i-offset2)  then
+					count = count+1;
+					dbv_EntrySetSelected [ mdb, entry_key, 1 ];
+				endif
+			endif
+
+		endloop
+		i=0;
+	endif
+	
+//	print entry_record;
+
+endloop
+
+//print count; // print how many 
+sum = cat[sum,count];
+count = 0;
+prior_mseq= 0;
+i=0;
+
+for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+	entry_record = db_Read [mdb_key, entry_key]; 
+	values = last untag entry_record; // removes tags from tagged vector, just values
+
+	if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+		prior_mseq = values(2);
+		for index in values loop // for each mseq in all mseqs
+			i=i+1;
+			if eqL [receptor, index] then // if the top level arguments are identical AND 
+				if values(i-offset3)  then
+					count = count+1;
+					dbv_EntrySetSelected [ mdb, entry_key, 1 ];
+				endif
+			endif
+
+		endloop
+		i=0;
+	endif
+	
+//	print entry_record;
+
+endloop
+
+//print count; // print how many 
+sum = cat[sum,count];
+count = 0;
+prior_mseq= 0;
+i=0;
+
+for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+	entry_record = db_Read [mdb_key, entry_key]; 
+	values = last untag entry_record; // removes tags from tagged vector, just values
+
+	if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+		prior_mseq = values(2);
+		for index in values loop // for each mseq in all mseqs
+			i=i+1;
+			if eqL [receptor, index] then // if the top level arguments are identical AND 
+				if values(i-offset4)  then
+					count = count+1;
+					dbv_EntrySetSelected [ mdb, entry_key, 1 ];
+				endif
+			endif
+
+		endloop
+		i=0;
+	endif
+	
+//	print entry_record;
+
+endloop
+
+//print count; // print how many
+sum = cat[sum,count]; 
+count = 0;
+prior_mseq= 0;
+i=0;
+
+for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+	entry_record = db_Read [mdb_key, entry_key]; 
+	values = last untag entry_record; // removes tags from tagged vector, just values
+
+	if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+		prior_mseq = values(2);
+		for index in values loop // for each mseq in all mseqs
+			i=i+1;
+			if eqL [receptor, index] then // if the top level arguments are identical AND 
+				if values(i-offset5)  then
+					count = count+1;
+					dbv_EntrySetSelected [ mdb, entry_key, 1 ];
+				endif
+			endif
+
+		endloop
+		i=0;
+	endif
+	
+//	print entry_record;
+
+endloop
+
+//print count; // print how many 
+sum = cat[sum,count];
+//print add sum;
+write['{} : {}\n', mdb, add sum];
+count = 0;
+prior_mseq= 0;
+i=0;
+
+endloop
+
+//print count; // print how many 
+
+local fnum = fopenw report_file;
+output_token = tok_cat ['\nOffset5:',totok count];
+fwrite[fnum, '{}', output_token];
+fclose fnum;
+count = 0;
+prior_mseq= 0;
+i=0;
+
+
+print 'done';
+
+endfunction

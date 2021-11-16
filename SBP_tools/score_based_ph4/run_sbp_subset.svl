@@ -1,0 +1,28 @@
+#svl
+
+function SBP_7feats;
+function feature_search_dir_7feats;
+function pharmcount_dir;
+function run_SBP_7feats;
+
+global function run_SBP_subset [subset_folder]; //receptor name in double quotes
+local folders = flist[];
+folders = get [folders, [1,2]]; //1,2,3,4,7,8,9,10
+local folder;
+
+for folder in folders loop
+	print folder;
+	cd folder;
+	cd subset_folder; // ex. 'v4/moefrags'
+	local receptor = flist[[], '*_minrec.moe'];
+	local database_file = flist[[], '*_output.mdb'];
+	run_SBP_7feats [receptor, database_file, '$HOME/OneDrive - The University of Memphis/SBP/score_based_ph4/pbd_conf10_updated.mdb', string folder];
+	local search_log = freadb ['ph4_searchlog.txt', 'char', INT_MAX];
+	local count_log = freadb ['pharmcount_log.txt', 'char', INT_MAX];
+	fwriteb ['results.txt', 'line', cat [search_log, "Actives:\n", count_log]];
+	cd '../../'; // this line differs based on OG set or set 2
+endloop
+
+Warning 'Done, click OK.';
+
+endfunction

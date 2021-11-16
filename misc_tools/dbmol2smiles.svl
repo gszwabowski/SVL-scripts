@@ -1,0 +1,20 @@
+#svl
+
+function Close;
+global function dbmol2smiles [mdb, database_field1];
+
+Close [force:1, viewreset:1, delgobj:1];
+local entries = db_Entries mdb;
+local entry;
+
+for entry in entries loop
+        local [ligand] =db_ReadFields [mdb, entry,[database_field1]]; //get structure from fieldname
+	local [ligand_chain, ligand_name] =db_CreateMolecule ligand;
+	local smiles = sm_ExtractUnique Atoms[];
+	ligand_name = tok_keep [ligand_name, 16];
+	write ['{}\n', ligand_name];
+	oDestroy [ligand_chain];			
+
+endloop
+
+endfunction

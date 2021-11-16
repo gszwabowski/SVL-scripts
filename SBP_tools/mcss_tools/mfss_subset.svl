@@ -1,0 +1,49 @@
+//Commentary 8/27/2020
+//This script will create a database containing a subset of placed
+//MCSS fragments from a MCSS output performed using all fragments.
+//This is meant to save time, since performing additional fragment
+//searched for each subset is time-consuming.
+
+//mfss_output: MCSS output performed with all fragments
+//receptor: receptor file (*_minrec.moe)
+//frag_db: database containing fragment subset
+//prefix: desired name prefix for subset files
+
+#svl
+
+global function mfss_subset [mfss_output, receptor, frag_db, prefix];
+
+local new_db = tok_cat [prefix, '_output.mdb'];
+db_Open [new_db, 'create'];
+local [fn, ft] = db_Fields [mfss_output];
+local length_fn = length fn;
+length_fn = length_fn+1;
+local i = 1;
+
+while  i < length_fn loop 
+	db_EnsureField [new_db, fn(i), ft(i)];
+	i=i+1;
+endloop
+
+
+local names = db_ReadColumn [frag_db, 'name'];
+local entries = db_Entries mfss_output;
+local entry, fragname;
+
+for entry in entries loop
+	local [name] = db_ReadFields [mfss_output, entry, 'name'];
+	for fragname in names loop
+		if name === fragname then
+		db_Write [new_db, 0, db_Read [mfss_output, entry]];
+		endif
+	endloop
+endloop
+
+local new_receptor = tok_cat [prefix, '_minrec.moe'];
+fcopy [receptor, new_receptor];
+write 'Done.\n';
+endfunction
+	
+
+	
+

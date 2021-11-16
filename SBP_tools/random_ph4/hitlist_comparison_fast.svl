@@ -1,0 +1,134 @@
+#svl
+
+//Commentary by Greg Szwabowski 12/4/2020
+//This script is used to determine which compounds appear in multiple hit lists when comparing multiple databases of hit lists.
+//Run this script in a folder containing hit list .mdb files and the results will appear in a database titled 'compounds.mdb'.
+//
+//BATCH USE:
+//To run this on the HPC, create a .sh file formatted like so:
+
+//#! /bin/csh
+//#SBATCH --ntasks=4
+//#SBATCH --partition=computeq
+//#SBATCH --job-name=NAME
+//#SBATCH --time=28800
+//
+//
+///public/apps/moe/moe2018/bin/moebatch -load ../hitlist_comparison_fast.svl \
+//-exec "hitlist_comparison_fast []"
+
+global function hitlist_comparison_fast []
+
+local files = flist [[],'*.mdb'];
+local mdb, name, entry, entry2, total_count;
+local name_vector = [];
+local i=1;
+
+for mdb in files loop
+	local names = db_ReadColumn [mdb, 'name'];
+	name_vector = cat [name_vector, names];
+endloop
+
+name_vector = uniq name_vector;
+
+write 'Name vector created.\n';
+
+local compound_db = db_Open ['compounds.mdb', 'create'];
+
+db_EnsureField [ compound_db, 'name', 'char' ];
+
+for name in name_vector loop
+	db_Write [compound_db, 0, [name: swrite ['{G}', name]]];
+endloop
+
+local max_i = length files + 1;
+
+for mdb in files loop
+	db_EnsureField [ compound_db, fbase mdb, 'int' ];
+endloop
+
+db_EnsureField [ compound_db, 'total', 'int' ];
+
+write 'Field names created.\n';
+
+
+local count = 0;
+
+local entries = db_Entries compound_db;
+
+i = 0;
+
+write 'Counting...\n';
+
+///// name extraction /////
+
+local dbnames_1 = uniq db_ReadColumn [first files, 'name'];
+files = dropfirst files;
+local dbnames_2 = uniq db_ReadColumn [first files, 'name'];
+files = dropfirst files;
+local dbnames_3 = uniq db_ReadColumn [first files, 'name'];
+files = dropfirst files;
+local dbnames_4 = uniq db_ReadColumn [first files, 'name'];
+files = dropfirst files;
+local dbnames_5 = uniq db_ReadColumn [first files, 'name'];
+files = dropfirst files;
+local dbnames_6 = uniq db_ReadColumn [first files, 'name'];
+
+local fields = first db_Fields [compound_db];
+
+
+	
+
+for entry in entries loop
+	name = db_ReadFields [compound_db, entry, 'name'];
+	if notnull join [name, dbnames_1] then
+		count = count + 1;
+	endif
+	db_Write [compound_db, entry, tagpoke[[], fields(2), count]];
+	total_count = total_count + count;
+	count = 0;
+	
+	if notnull join [name, dbnames_2] then
+		count = count + 1;
+	endif
+	db_Write [compound_db, entry, tagpoke[[], fields(3), count]];
+	total_count = total_count + count;
+	count = 0;
+
+	if notnull join [name, dbnames_3] then
+		count = count + 1;
+	endif
+	db_Write [compound_db, entry, tagpoke[[], fields(4), count]];
+	total_count = total_count + count;
+	count = 0;
+	
+	if notnull join [name, dbnames_4] then
+		count = count + 1;
+	endif
+	db_Write [compound_db, entry, tagpoke[[], fields(5), count]];
+	total_count = total_count + count;
+	count = 0;	
+
+	if notnull join [name, dbnames_5] then
+		count = count + 1;
+	endif
+	db_Write [compound_db, entry, tagpoke[[], fields(6), count]];
+	total_count = total_count + count;
+	count = 0;
+	
+	if notnull join [name, dbnames_6] then
+		count = count + 1;
+	endif
+	db_Write [compound_db, entry, tagpoke[[], fields(7), count]];
+	total_count = total_count + count;
+	count = 0;
+	
+db_Write [compound_db, entry, [total: total_count]];
+total_count = 0;
+endloop
+
+write 'Done.\n';
+
+endfunction
+
+	

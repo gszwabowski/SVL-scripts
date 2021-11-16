@@ -1,0 +1,51 @@
+#svl
+//Commentary 4/5/21 GLS
+//This script will allow you to calculate ligand similarity between molecules in a database (mdb)
+//and a molecule that is loaded into MOE.
+//
+//Output: a similarity field will be created in the database containing the ligands
+//
+//Arguments
+//---------
+//mdb: database containing molecules in the 'mol' field
+//refmdb: database containing known ligands for a target
+
+function ph4_MACCSBIT_Fingerprint;
+function ph4_MACCSBIT_Tanimoto;
+function ph4_Tanimoto_idx;
+
+global function ligand_similarity_mdb [mdb, ref_mdb]
+
+Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+
+local entries = db_Entries mdb;
+local ref_entries = db_Entries ref_mdb;
+local ent, ref_ent, ligand_chain, ligand_name, refligand_chain, refligand_name, ligand, lig_atoms;
+
+for ref_ent in ref_entries loop
+	local [ref_ligand] = db_ReadFields [ref_mdb, ref_ent, 'mol']; 
+	[refligand_name] = first ref_ligand;
+	db_EnsureField [mdb, tok_cat[refligand_name, '_similarity'], 'float'];
+	[refligand_chain, refligand_name] =db_CreateMolecule ref_ligand;
+	local [ref_atoms] = cAtoms [refligand_chain];
+	local ref_FP = ph4_MACCSBIT_Fingerprint ref_atoms;
+	local i = 1;
+
+	for ent in entries loop
+		[ligand] = db_ReadFields [mdb, ent, 'mol'];
+		[ligand_chain, ligand_name] =db_CreateMolecule ligand;
+		[lig_atoms] = cAtoms [ligand_chain];
+		sleep 0.1;
+		local FP = ph4_MACCSBIT_Fingerprint lig_atoms;
+		local sim = ph4_MACCSBIT_Tanimoto [ref_FP, FP];
+		db_Write [mdb, ent, tagpoke[[], tok_cat[refligand_name, '_similarity'], sim]];
+		oDestroy [ligand_chain];
+		if sim >= 0.5 then
+			write [tok_cat['entry ', totok i, '/', refligand_name, '_similarity: {}\n'], sim];
+		endif
+		i = inc i;
+	endloop
+oDestroy [refligand_chain];
+endloop
+
+endfunction

@@ -1,0 +1,14 @@
+global function ph4_db_fbase [mdb]
+
+local entries = db_Entries mdb;
+local entry;
+db_EnsureField [mdb, 'fbase', 'char'];
+
+for entry in entries loop
+	local ph4_name = tok_cat tok_cat totok db_ReadFields [mdb, entry, 'filename'];
+	local ph4_fbase = fbase ph4_name;
+	print ph4_fbase;
+	db_Write [mdb, entry, tagpoke[[], 'fbase', string ph4_fbase]];
+endloop
+
+endfunction

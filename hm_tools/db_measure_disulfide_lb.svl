@@ -1,0 +1,28 @@
+global function cys_measure_LB [database_file, database_field, residue1, residue2]  
+//This script will measure distances between sulfur atoms of two cysteine residues in a single protein chain when a template ligand is present.
+
+        Close [force:1, viewreset:1, delgobj:1];        // close any open structures
+        local mdb_key = db_Open [database_file, 'read-write'];
+        local entries = db_Entries mdb_key;
+        local entry_key, protein, protein_chain, protein_name, protein_residues, protein_atoms1, protein_atoms2, dist;
+
+
+
+//  create fields for distance measurements
+        db_CreateField [mdb_key,'S-S Dist','float'];
+//  loop through the database to make measurements to the protein for each ligand docked
+        for entry_key in entries loop
+                [protein] =db_ReadFields [mdb_key, entry_key,[database_field]]; //get structure from fieldname
+                [protein_chain, protein_name] =db_CreateMolecule protein;	
+                [protein_residues] = cResidues [protein_chain(1)];
+		[protein_atoms1] = rAtoms [protein_residues(residue1)];
+		[protein_atoms2] = rAtoms [protein_residues(residue2)];
+//   measure distances
+		dist = aDist[protein_atoms1(6), protein_atoms2(6)];	// sulfur atom is always sixth atom in a cysteine residue
+//   write distances to the database
+               db_Write [mdb_key, entry_key, tagpoke[[],'S-S Dist',dist]];
+//   destroy one ligand before reading in the next
+               oDestroy [protein_chain];
+        endloop
+        Close [force:1, viewreset:1, delogobj:1];
+endfunction

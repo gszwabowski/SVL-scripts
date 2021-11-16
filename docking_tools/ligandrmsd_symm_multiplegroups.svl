@@ -1,0 +1,154 @@
+#svl
+
+//This script calculates two RMSD values between two ligand chains (each containing symmetrical functional groups) based on two
+//ligand-receptor complexes that have been aligned and superposed based using MOE's built in tools.
+//use index of [SelectedAtoms[], pose heavy atoms] to find
+//numerical positions of atoms in symmetrical groups
+//ex:
+//svl> chains = Chains[]
+//svl> [pose] = cAtoms chains(2)
+//svl> mask = aElement pose <> 'H'
+//svl> pose = pose | mask
+//svl> length pose
+//26
+//svl> indexof [SelectedAtoms[], pose]
+//[4,8,9,10,15]
+//
+//ARGUMENTS
+//--------------
+//reference_file: .pdb or .moe file containing your crystal structure
+//database_file: .mdb with docked ligand poses
+//database_field1: 'mol'
+//database_field2: 'receptor'
+//ref_groups/pose_groups: should be a nested vector containing indices of atoms, ex. [[3,5,6,7,14], [4,8,9,10,15]]
+//
+//Pose Numbering example (cyclohexyl subsitiuent)
+//
+//
+//			  R
+//			 `:.
+//			 `:.
+//			 `:.
+//                       `:.                          
+//                       `:.                        
+//                   .+so:+so-                     
+//                `:oo/.     `:oo/.                 
+//             .+so:             -+so-              
+//         `:os/.                   `/oo/`          
+//  1   .+so:`                          -+s+-    3   
+//      h:                                 .m`      
+//      h-                                 `m`      
+//      h-                                 `m`      
+//      h-                                 `m`      
+//      h-                                 `m`      
+//      h-                                 `m`      
+//      h-                                 `m`      
+//      h-                                 `m`      
+//      h-                                 `m`      
+//      h-                                 `m`      
+//  2   os/`                             `:oy`   4   
+//        -+s+-                       .+so:`        
+//           `/oo/`                :os+.            
+//               -os+-         ./oo:`               
+//                  ./so:`  -os+.                   
+//                      -oso:`                      
+//
+//
+//
+// argument to feed script would be [[1,2],[3,4]] to ensure that group is "flipped"
+// when atomic distances are calculated. [1,2] would be refgroups(1) and [3,4] would
+// be refgroups (2).
+// ex. ligandRMSD_symmetry ['5HT1B_4IAR_RMSDprepped.moe', '5ht1b_4iar_a_lig1_results2.mdb', 'mol', 'receptor', [[1,2],[3,4]], [[1,2],[3,4]]]                                    
+
+function Close;       
+function pro_Superpose;
+function pro_Align;
+global function ligandRMSD_symmetry_multiplegroups [reference_file, database_file, database_field1, database_field2, ref_groups, pose_groups];
+
+	Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+	local mdb_key = db_Open [database_file, 'read-write'];
+	local entries = db_Entries mdb_key;
+	local entry_key, ligand, receptor, atoms2, ligand_chain, ligand_name, receptor_chain, receptor_name, ref_chains, mask, ref_residues, rec_residues, ref_ligand, ligand_heavy, ref_heavy;   	
+
+//  create field for Ligand RMSD
+	db_EnsureField [mdb_key,'RMSD_old','float'];
+	db_EnsureField [mdb_key,'RMSD_switched','float'];
+
+//  open reference file
+	Open reference_file;
+	ref_chains = Chains[];
+	[ref_ligand] = ref_chains(2);
+
+//  loop through the database to make measurements for each ligand
+        for entry_key in entries loop
+        	[ligand] =db_ReadFields [mdb_key, entry_key,[database_field1]]; //get structure from fieldname
+		[receptor] =db_ReadFields [mdb_key, entry_key, [database_field2]];
+		[receptor_chain, receptor_name] =db_CreateMolecule receptor;
+		local [rec_atoms] = cAtoms receptor_chain;
+		aSetHidden [rec_atoms, 1];
+		[ligand_chain, ligand_name] =db_CreateMolecule ligand;
+
+//	align & superpose chains with ligands
+	pro_Align[Chains[]];
+	pro_Superpose[[Chains[]], [auto_associate:1, accent_conserved: 1]];
+		
+
+	
+
+//local function prompter_example [ref_groups, pose_groups]
+
+	local i=0;
+	local p1, p2, p3, p4, p5;
+	local r1, r2, r3, r4, r5;
+	local posegroups = [p1, p2, p3, p4, p5];
+	local refgroups = [r1, r2, r3, r4, r5];
+	local chains = Chains[];
+	local [ref] = cAtoms ref_ligand;
+	aSetColorBy [ref, 'chain'];
+	local [pose] = cAtoms ligand_chain;
+	mask = aElement ref <> 'H';
+	ref_heavy = ref | mask;
+	local mask2 = aElement pose <> 'H';
+	local pose_heavy = pose | mask2;
+ 
+	while i < length ref_groups loop
+		i = i+1;
+		refgroups(i) = get [ref_heavy, ref_groups(i)];
+		//aSetSelected [Atoms[], 0];
+		//WindowDestroy wkey;
+		print cat ['refgroups:', refgroups(i)];
+	endloop
+
+	i = 0;
+	while i < length pose_groups loop
+		i = i+1;
+		posegroups(i) = get [pose_heavy, pose_groups(i)];
+		//aSetSelected [Atoms[], 0];
+		//WindowDestroy wkey;
+		print cat ['posegroups:', posegroups(i)];
+	endloop
+
+	local ref_unsym = diff [ref_heavy, cat refgroups];
+	local pose_unsym = diff [pose_heavy, cat posegroups];
+	
+	aSetSelected [ref_unsym, 1];
+	local dist_sq = sqr (aDist [pose_unsym, ref_unsym]);
+	local dist_sq2 = cat [dist_sq, sqr (aDist [refgroups(1), posegroups(1)])];
+	dist_sq2 = cat [dist_sq2, sqr (aDist [refgroups(2), posegroups(2)])];
+	local RMSD1 = sqrt(add dist_sq2/length dist_sq2);
+	print RMSD1;
+
+	dist_sq2 = cat [dist_sq, sqr (aDist [refgroups(1), posegroups(2)])];
+	dist_sq2 = cat [dist_sq, sqr (aDist [refgroups(2), posegroups(1)])];
+	local RMSD2 = sqrt(add dist_sq2/length dist_sq2);
+	print RMSD2;
+   
+	db_Write [mdb_key, entry_key, tagpoke[[],'RMSD_old', RMSD1[1]]];
+	db_Write [mdb_key, entry_key, tagpoke[[],'RMSD_switched', RMSD2[1]]];
+
+//   destroy one ligand before reading in the next
+         	oDestroy [ligand_chain];
+		oDestroy [receptor_chain];
+endloop
+
+endfunction

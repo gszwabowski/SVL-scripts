@@ -1,0 +1,86 @@
+//Commentary 5/27/21 GS
+//This script will calculate the distance from BP residue centroids
+//found with site finder to each pharmacophore annotation point.
+//
+//ARGUMENTS
+//receptor: .moe containg a receptor structure
+function ph4_EditorWkeyList;
+global function ph4_near_residues [receptor];
+
+
+Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+Open receptor;
+local res_dummies = [];
+local mdb_key = db_Open ['ph4_dist_to_residues.mdb', 'create'];
+
+db_EnsureField [mdb_key, 'filename', 'char' ];
+db_EnsureField [mdb_key, 'max_res', 'float' ];
+db_EnsureField [mdb_key, 'min_res', 'float' ];
+db_EnsureField [mdb_key, 'avg_res', 'float' ];
+// open sitefinder
+	
+	loop
+		Open '$MOE/svl/run/sitefind.svl';
+		local wkey2 = WindowKeyList[];
+	
+	
+	
+		WindowTrigger [wkey2, [panel:'Apply']];
+		WindowTrigger [wkey2, [disp_aselect:1]];
+		sleep 0.2;
+	if notnull SelectedAtoms[] then break;
+	endif
+	endloop;
+	
+	sleep 5;
+	WindowDestroy wkey2;
+
+local residues = oParent SelectedAtoms[];
+local residue;
+aSetSelected [Atoms[], 0];
+for residue in residues loop
+	local [res_atoms] = oChildren residue;
+	local site_center = oCentroid res_atoms;
+	local site_dum = mol_Create [ '', [ '', '', '', 1 ], 
+			[ '*', 1, " ", 'none', 1 ], 
+			[ 'LP', 0, 'sp', 0, 0, [ [] ], 0, 'DU', 0, site_center(1),site_center(2),site_center(3) ] ];
+	res_dummies = cat [res_dummies, cAtoms site_dum];
+endloop	
+
+local ph4;
+local ph4_files = flist [[],'*.ph4'];
+
+for ph4 in ph4_files loop
+Open ph4;
+
+local [fatoms] = cAtoms last droplast Chains[];
+local fatom;
+local distv = [];
+
+//print oType fatoms;
+//print oType res_dummies;
+for fatom in fatoms loop
+	local distance = min aDist [fatom, res_dummies];
+	distv = cat[distv, distance];
+endloop
+
+local max = max distv;
+local min = min distv;
+local mean = (add distv)/(length distv);
+
+print cat ['Max:', max];
+print cat ['Min:', min];
+print cat ['Mean:', mean];
+
+local value = [
+		filename: swrite ['{G}', fbase ph4], 
+		max_res: max, 
+		min_res: min, 
+		avg_res: mean];
+
+db_Write [mdb_key, 0, value];
+sleep 2;
+WindowDestroy ph4_EditorWkeyList [];
+endloop
+
+endfunction

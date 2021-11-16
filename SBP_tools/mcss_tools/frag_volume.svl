@@ -1,0 +1,31 @@
+#svl
+//Commentary 8/27/2020
+//This script allows for the calculation of the combined volume of
+//fragments in a MCSS output.
+//
+//mdb: database containing MCSS output fragments
+
+function QuaSAR_DescriptorMDB;
+global function frag_volume [mdb];
+
+local entries = db_Entries mdb;
+local entry;
+
+Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+
+for entry in entries loop
+	local [ligand] =db_ReadFields [mdb, entry,'mol']; //get structure from fieldname
+	local [ligand_chain, ligand_name] =db_CreateMolecule ligand;	
+endloop
+
+local output = db_Open ['volume.mdb', 'create'];
+db_EnsureField [output, 'mol', 'molecule'];
+db_Write [output, 0, [mol: mol_Extract oChildren Chains[]]];
+
+QuaSAR_DescriptorMDB [output, 'mol', ['vdw_vol', 'vol']];
+
+dbv_Open [ 'volume.mdb', 0 ];
+
+write 'Done.\n';
+
+endfunction;

@@ -1,0 +1,73 @@
+#svl
+//Commentary 4/15/21 GLS
+//This script will allow you to calculate a similarity matrix between all molecules in a database (mdb)
+//that will be printed to the SVL commands window.
+//
+//
+//Arguments
+//---------
+//mdb: database containing molecules in the 'mol' field
+
+function ph4_MACCSBIT_Fingerprint;
+function ph4_MACCSBIT_Tanimoto;
+function ph4_Tanimoto_idx;
+
+global function similarity_matrix_db [mdb]
+
+Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+
+local entries = db_Entries mdb;
+local ent, ligand_chain, ligand_name, ligand, lig_atoms, i, j;
+local other_ent, ligand_chain2, ligand_name2, ligand2, lig_atoms2;
+
+//print header of similarity matrix with entry numbers
+write ['\t'];
+for i = 1, length entries, 1 loop
+	write ['{}\t', i];
+endloop
+write ['\n'];
+
+//loop to obtain molecular fingerprints for each entry as well as the 6 other entries so similiarities can be calculated
+i=1;
+for ent in entries loop
+	[ligand] = db_ReadFields [mdb, ent, 'mol'];
+	[ligand_chain, ligand_name] =db_CreateMolecule ligand;
+	[lig_atoms] = cAtoms [ligand_chain];
+	sleep 0.5;
+	local FP = ph4_MACCSBIT_Fingerprint lig_atoms;
+	local ent_mask = ent <> entries;
+	local other_ents = entries | ent_mask; //only calculate similarities to other molecules
+	local sim_v = [];
+	for ent in entries loop
+		[ligand2] = db_ReadFields [mdb, ent, 'mol'];
+		[ligand_chain2, ligand_name2] =db_CreateMolecule ligand2;
+		[lig_atoms2] = cAtoms [ligand_chain2];
+		sleep 0.5;
+		local FP2 = ph4_MACCSBIT_Fingerprint lig_atoms2;
+		local sim = ph4_MACCSBIT_Tanimoto [FP, FP2];
+		sim_v = cat[sim_v, sim];
+		oDestroy [ligand_chain2];
+	endloop
+	
+	//print row number
+	write ['{}\t', i];
+
+	//print similarities in row while ensuring that comparisons of the same molecule are not given a value
+	j=1;
+	for sim in sim_v loop
+		if sim == 1 and j == length entries then
+			write ['{}\n', '-'];
+		elseif j == length entries then
+			write ['{f.2}\n', sim];
+		elseif sim == 1 then
+			write ['{}\t', '-'];
+		else
+			write ['{f.2}\t', sim];
+		endif;
+		j = inc j;
+	endloop
+	oDestroy [ligand_chain];
+	i = inc i;
+endloop
+
+endfunction

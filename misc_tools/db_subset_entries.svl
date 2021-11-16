@@ -1,0 +1,25 @@
+global function db_subset_entries [mdb, output_mdb, entry_numbers];
+
+local field_names, field_types;
+local entries = db_Entries mdb;
+entries = get [entries, entry_numbers];
+[field_names, field_types] = db_Fields mdb;
+
+local subset_mdb = db_Open [ output_mdb,'create'];
+[field_names, field_types] = db_Fields 'output.mdb';
+
+//create fields from mdb in output_mdb
+local i;
+for i = 1, length field_names, 1 loop
+	db_EnsureField [output_mdb, field_names(i), field_types(i)];
+endloop
+
+//read each entry from mdb and write it to output_mdb
+local entry;
+for entry in entries loop
+	local entry_record = db_Read [mdb, entry];
+	db_Write [output_mdb, 0, entry_record ];
+endloop
+
+endfunction
+

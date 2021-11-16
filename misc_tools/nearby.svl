@@ -1,0 +1,40 @@
+#svl 
+//Commentary 8/27/2020
+//This script will find Aatoms within "dist" Å of Batoms 
+//Arguments
+//---------
+//Aatoms: vector of receptor/protein atoms
+//Batoms: vector of ligand/water atoms
+
+global function Nearby [Aatoms, Batoms, dist]
+    local i, seg, idx, r2, prox;
+    local nmask = zero Aatoms;
+    const PACKET = 100;
+
+    if length Aatoms > length Batoms then
+	prox = prox_open [dist, aPos Aatoms, dist];
+
+	for i in split [x_id Batoms, PACKET] loop
+	    [seg, idx, r2] = prox_find [prox, aPos Batoms[i], 0];
+	    nmask[idx] = 1;
+	endloop
+
+	prox_close prox;
+    else
+	prox = prox_open [dist, aPos Batoms, dist];
+
+	for i in split [x_id Aatoms, PACKET] loop
+	    [seg, idx, r2] = prox_find [prox, aPos Aatoms[i], 0];
+	    nmask[i] = notnot seg;
+	endloop
+
+	prox_close prox;
+    endif
+    
+    local near_atoms = Aatoms | nmask;
+    local near_residues = oParent near_atoms;
+
+    return near_atoms; // this prints protein atoms near ligand/water atoms (whatever you put as Batoms)
+    		      // change "print" to "return" and comment out the next line if atoms are wanted
+    //return near_residues; // return residues near ligand/water atoms
+endfunction

@@ -1,0 +1,49 @@
+//Commentary GLS 7/28/21
+//This script is used to renumber the compounds in
+//a database after conformers have been generated.
+//ARGUMENTS
+//=========
+//mdb: database you wish to renumber
+//method: 'mseq' or 'name'
+
+global function mseq_renum [mdb, method]
+
+db_EnsureField [mdb, 'mseq_renum', 'int'];
+
+local entries = db_Entries mdb;
+local mseq_counter = 1;
+local entry;
+
+if method == 'mseq' then
+	for entry in entries loop
+		local mseq = db_ReadFields [mdb, entry, 'mseq'];
+		if entry == first entries then
+			db_Write [mdb, entry, tagpoke[[],'mseq_renum', mseq_counter]];
+			local prev_mseq = mseq;
+		elseif mseq == prev_mseq then
+			db_Write [mdb, entry, tagpoke[[],'mseq_renum', mseq_counter]];
+		elseif mseq <> prev_mseq then
+			mseq_counter = inc mseq_counter;
+			db_Write [mdb, entry, tagpoke[[],'mseq_renum', mseq_counter]];
+			prev_mseq = mseq;
+		endif		
+	endloop
+elseif method == 'name' then
+	for entry in entries loop
+		local [name] = mseq = db_ReadFields [mdb, entry, 'name'];
+		print name;
+		name = token name;
+		if entry == first entries then
+			db_Write [mdb, entry, tagpoke[[],'mseq_renum', mseq_counter]];
+			local prev_name = name;
+		elseif name == prev_name then
+			db_Write [mdb, entry, tagpoke[[],'mseq_renum', mseq_counter]];
+		elseif name <> prev_name then
+			mseq_counter = inc mseq_counter;
+			db_Write [mdb, entry, tagpoke[[],'mseq_renum', mseq_counter]];
+			prev_name = name;
+		endif		
+	endloop
+endif
+
+endfunction

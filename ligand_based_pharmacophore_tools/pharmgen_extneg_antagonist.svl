@@ -1,0 +1,216 @@
+#svl
+function ph4_Elucidate;
+global function pharmgen_ext_antag [database_file];
+
+ph4_Elucidate [
+    database_file,
+    'Unified_Antagonist_ExtNeg.mdb',
+    [
+        report : 'Unified_Antagonist_ExtNeg.txt',
+        mfield : 'Structure',
+        csearch : 'Stochastic Search',
+        csave : 0,
+        csavefile : '',
+        ccluster : 0.1,
+        afield : 'Antagonist',
+        acompare : '>',
+        athreshold : 0,
+        scheme : 'Unified',
+        coverage : 0.9,
+        qcluster : 1.25,
+        qspacing : 0.6,
+        o_aro : 0,
+        o_lpa : 0,
+        maxfeatures : 5,
+        esel : 0,
+        dbview : 1,
+        verbose : 1,
+        f_expr : ['Aro|PiR','Hyd','Don2','Acc2','ML2','Cat','Ani','O2','CN2'],
+        f_rad : [1.4,1.4,1,1,1,1.4,1.4,1.4,1.4],
+        f_limit : ['-','0-3','-','-','0','-','-','-','-'],
+        f_label : ['R','H','d','a','m','+','-','O','N']
+    ]
+];
+
+ph4_Elucidate [
+    database_file,
+    'PCHD_Antagonist_ExtNeg.mdb',
+    [
+        report : 'PCHD_Antagonist_ExtNeg.txt',
+        mfield : 'Structure',
+        csearch : 'Stochastic Search',
+        csave : 0,
+        csavefile : '',
+        ccluster : 0.1,
+        afield : 'Antagonist',
+        acompare : '>',
+        athreshold : 0,
+        scheme : 'PCHD',
+        coverage : 0.9,
+        qcluster : 1.25,
+        qspacing : 0.6,
+        o_aro : 0,
+        o_lpa : 0,
+        maxfeatures : 5,
+        esel : 0,
+        dbview : 1,
+        verbose : 1,
+        f_expr : ['Aro|PiR','Hyd','Don2','Acc2','ML2','Cat','Ani','O2','CN2'],
+        f_rad : [1.4,1.4,1,1,1,1.4,1.4,1.4,1.4],
+        f_limit : ['-','0-3','-','-','0','-','-','-','-'],
+        f_label : ['R','H','d','a','m','+','-','O','N']
+    ]
+];
+
+ph4_Elucidate [
+    database_file,
+    'CHD_Antagonist_ExtNeg.mdb',
+    [
+        report : 'CHD_Antagonist_ExtNeg.txt',
+        mfield : 'Structure',
+        csearch : 'Stochastic Search',
+        csave : 0,
+        csavefile : '',
+        ccluster : 0.1,
+        afield : 'Antagonist',
+        acompare : '>',
+        athreshold : 0,
+        scheme : 'CHD',
+        coverage : 0.9,
+        qcluster : 1.25,
+        qspacing : 0.6,
+        o_aro : 0,
+        o_lpa : 0,
+        maxfeatures : 5,
+        esel : 0,
+        dbview : 1,
+        verbose : 1,
+        f_expr : ['Aro|PiR','Hyd','Don2','Acc2','ML2','Cat','Ani','O2','CN2'],
+        f_rad : [1.4,1.4,1,1,1,1.4,1.4,1.4,1.4],
+        f_limit : ['-','0-3','-','-','0','-','-','-','-'],
+        f_label : ['R','H','d','a','m','+','-','O','N']
+    ]
+];
+
+ph4_Elucidate [
+    database_file,
+    'PCH_Antagonist_ExtNeg.mdb',
+    [
+        report : 'PCH_Antagonist_ExtNeg.txt',
+        mfield : 'Structure',
+        csearch : 'Stochastic Search',
+        csave : 0,
+        csavefile : '',
+        ccluster : 0.1,
+        afield : 'Antagonist',
+        acompare : '>',
+        athreshold : 0,
+        scheme : 'PCH',
+        coverage : 0.9,
+        qcluster : 1.25,
+        qspacing : 0.6,
+        o_aro : 0,
+        o_lpa : 0,
+        maxfeatures : 5,
+        esel : 0,
+        dbview : 1,
+        verbose : 1,
+        f_expr : ['Aro|PiR','Hyd','Don2','Acc2','ML2','Cat','Ani','O2','CN2'],
+        f_rad : [1.4,1.4,1,1,1,1.4,1.4,1.4,1.4],
+        f_limit : ['-','0-3','-','-','0','-','-','-','-'],
+        f_label : ['R','H','d','a','m','+','-','O','N']
+    ]
+];
+
+ph4_Elucidate [
+    database_file,
+    'PCH_All_Antagonist_ExtNeg.mdb',
+    [
+        report : 'PCH_All_Antagonist_ExtNeg.txt',
+        mfield : 'Structure',
+        csearch : 'Stochastic Search',
+        csave : 0,
+        csavefile : '',
+        ccluster : 0.1,
+        afield : 'Antagonist',
+        acompare : '>',
+        athreshold : 0,
+        scheme : 'PCH_All',
+        coverage : 0.9,
+        qcluster : 1.25,
+        qspacing : 0.6,
+        o_aro : 0,
+        o_lpa : 0,
+        maxfeatures : 5,
+        esel : 0,
+        dbview : 1,
+        verbose : 1,
+        f_expr : ['Aro|PiR','Hyd','Don2','Acc2','ML2','Cat','Ani','O2','CN2'],
+        f_rad : [1.4,1.4,1,1,1,1.4,1.4,1.4,1.4],
+        f_limit : ['-','0-3','-','-','0','-','-','-','-'],
+        f_label : ['R','H','d','a','m','+','-','O','N']
+    ]
+];
+
+
+ph4_Elucidate [
+    database_file,
+    'PPCH_Antagonist_ExtNeg.mdb',
+    [
+        report : 'PPCH_Antagonist_ExtNeg.txt',
+        mfield : 'Structure',
+        csearch : 'Stochastic Search',
+        csave : 0,
+        csavefile : '',
+        ccluster : 0.1,
+        afield : 'Antagonist',
+        acompare : '>',
+        athreshold : 0,
+        scheme : 'PPCH',
+        coverage : 0.9,
+        qcluster : 1.25,
+        qspacing : 0.6,
+        o_aro : 0,
+        o_lpa : 0,
+        maxfeatures : 5,
+        esel : 0,
+        dbview : 1,
+        verbose : 1,
+        f_expr : ['Aro|PiR','Hyd','Don2','Acc2','ML2','Cat','Ani','O2','CN2'],
+        f_rad : [1.4,1.4,1,1,1,1.4,1.4,1.4,1.4],
+        f_limit : ['-','0-3','-','-','0','-','-','-','-'],
+        f_label : ['R','H','d','a','m','+','-','O','N']
+    ]
+];
+
+ph4_Elucidate [
+    database_file,
+    'PPCH_All_Antagonist_ExtNeg.mdb',
+    [
+        report : 'PPCH_All_Antagonist_ExtNeg.txt',
+        mfield : 'Structure',
+        csearch : 'Stochastic Search',
+        csave : 0,
+        csavefile : '',
+        ccluster : 0.1,
+        afield : 'Antagonist',
+        acompare : '>',
+        athreshold : 0,
+        scheme : 'PPCH_All',
+        coverage : 0.9,
+        qcluster : 1.25,
+        qspacing : 0.6,
+        o_aro : 0,
+        o_lpa : 0,
+        maxfeatures : 5,
+        esel : 0,
+        dbview : 1,
+        verbose : 1,
+        f_expr : ['Aro|PiR','Hyd','Don2','Acc2','ML2','Cat','Ani','O2','CN2'],
+        f_rad : [1.4,1.4,1,1,1,1.4,1.4,1.4,1.4],
+        f_limit : ['-','0-3','-','-','0','-','-','-','-'],
+        f_label : ['R','H','d','a','m','+','-','O','N']
+    ]
+];
+
+endfunction

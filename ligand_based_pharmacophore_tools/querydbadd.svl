@@ -1,0 +1,42 @@
+#svl
+// Script/Commentary by Greg Szwabowski, 8/22/19
+// This script is used to sort pharmacophore elucidation
+// output first by overlap, then by accuracy. Each time 
+// the database is sorted, the highest entry is saved into
+// a database suffixed "_queries". This database will end
+// up containing pharmacophore elucidation results for the
+// highest overlap AND highest accuracy entries.
+
+function db_ImportDB;
+global function queryDBadd[]; //database_file is mdb with elucidation results
+		
+		local mdb_key, mdb_key2;   	
+		local files = flist [[],'*.mdb'];
+		local overlap, accuracy, field_names, field_types, mdb, output_mdb, database_file, nentries;
+		
+//  open pharmacophore elucidation database and find highest overlap & accuracy entries
+	for database_file in files loop
+		mdb_key = db_Open [database_file, 'read-write'];
+		output_mdb = tok_cat [fbase database_file, '_queries.mdb']; // name variable for database to be created
+		mdb_key2 = db_Open [output_mdb, 'create']; // create new database for queries
+		db_Sort [database_file, 'overlap', 1]; // sort database by overlap
+		[field_names,field_types]= db_Fields database_file; //create variables with field names & types for db import command
+		overlap = db_Entries [database_file]; // used to check if name is the same
+		db_ImportDB [output_mdb, database_file,[],field_names,field_types,[end_entry:1]]; // imports highest overlap into mdb
+		db_Sort [database_file, 'accuracy', 1]; // then sort database by accuracy
+		accuracy = db_Entries [database_file];
+		nentries = db_nEntries database_file;
+		if nentries == 0 then		// if database is empty (no results from elucidation), don't do anything with it
+			print database_file;
+			print 'database is empty, nothing added';
+		elseif accuracy(1) == overlap(1) then // if entry with highest accuracy = entry with highest overlap, don't add both
+			print database_file;
+			print 'same, not adding to database';
+		else
+			db_ImportDB [output_mdb, database_file,[],field_names,field_types,[end_entry:1]]; //need to add "if same" loop
+		endif
+		endloop
+
+print 'Done generating query mdbs.';
+
+endfunction

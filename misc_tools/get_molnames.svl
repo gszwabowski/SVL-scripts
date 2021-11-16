@@ -1,0 +1,19 @@
+#svl
+//Commentary by Greg Szwabowski 12/4/2020
+//This script is used to obtain a text file containing the names of every molecule in a
+// database (mdb) containing the field 'name'.
+global function get_molnames [mdb]
+
+local entries = db_Entries [mdb];
+local entry;
+
+logfile 'names.txt';
+
+for entry in entries loop
+	local [name] = db_ReadFields [mdb, entry, 'name'];
+	print name;
+endloop
+
+logfile[];
+
+endfunction

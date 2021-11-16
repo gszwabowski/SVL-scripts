@@ -1,0 +1,9 @@
+#svl
+//This script will allow you to convert a MOE database for use with the database broswer in MOE (for analyzing docking results).
+global function db_2_dockmdb [mdb]
+
+db_SetEnv [mdb, '{mol}dbvbrowse_Dock', 'ligand'];
+db_SetEnv [mdb, '{receptor}dbvbrowse_Dock', 'receptor'];
+db_SetEnv [mdb, '{S}dbvbrowse_Dock', 'score'];
+
+endfunction

@@ -1,0 +1,97 @@
+#svl
+function ph4_EditorWkeyList;
+global function feat_dist_db [output_mdb, receptor]
+
+Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+Open receptor;
+
+local mdb_key = db_Open [output_mdb, 'read-write'];
+db_EnsureField [mdb_key, 'max_feat', 'float' ];
+db_EnsureField [mdb_key, 'min_feat', 'float' ];
+db_EnsureField [mdb_key, 'avg_feat', 'float' ];
+
+db_EnsureField [mdb_key, 'max_centr', 'float' ];
+db_EnsureField [mdb_key, 'min_centr', 'float' ];
+db_EnsureField [mdb_key, 'avg_centr', 'float' ];
+
+local entries = db_Entries output_mdb;
+local ph4;
+local ph4_files = flist [[],'*.ph4'];
+
+// open sitefinder
+	
+	loop
+		Open '$MOE/svl/run/sitefind.svl';
+		local wkey2 = WindowKeyList[];
+	
+	
+	
+		WindowTrigger [wkey2, [panel:'Apply']];
+		WindowTrigger [wkey2, [disp_aselect:1]];
+		sleep 0.2;
+	if notnull SelectedAtoms[] then break;
+	endif
+	endloop;
+	
+	sleep 5;
+	WindowDestroy wkey2;
+
+	local site_center = oCentroid SelectedAtoms[];
+	local site_dum = mol_Create [ '', [ '', '', '', 1 ], 
+			[ '*', 1, " ", 'none', 1 ], 
+			[ 'LP', 0, 'sp', 0, 0, [ [] ], 0, 'DU', 0, site_center(1),site_center(2),site_center(3) ] ];
+	aSetSelected [SelectedAtoms[], 0];
+	print oType site_dum;
+	site_dum = cAtoms site_dum;
+
+local entry;
+for entry in entries loop
+	local index = db_ReadFields [output_mdb, entry, 'index'];
+	ph4 = tok_cat [totok index, '.ph4'];
+	Open ph4;
+	local wkey = ph4_EditorWkeyList [];
+	print 'Features to Features';
+	local [fatoms] = cAtoms last droplast Chains[];
+	local mtx = aDist [tr fatoms, fatoms];
+	mtx = cat mtx;
+	mtx = pack mtx;
+	print cat ['Max:', max mtx];
+	print cat ['Min:', min mtx];
+	local mean = (add mtx)/(length mtx);
+	print cat ['Mean:', mean];
+	
+	print 'Centroid to Features';
+	local mtx2 = aDist [site_dum, fatoms];
+	print cat ['Max:', max mtx2];
+	print cat ['Min:', min mtx2];
+	local mean2 = (add mtx2)/(length mtx2);
+	print cat ['Mean:', mean];
+	
+	db_Write [
+	output_mdb, entry, [
+	max_feat: max mtx,
+	min_feat: min mtx,
+	avg_feat: mean,
+	max_centr: max mtx2,
+	min_centr: min mtx2,
+	avg_centr:mean2]
+	];
+	sleep 2;
+	WindowDestroy wkey;
+endloop
+
+local avg_maxfeat = add db_ReadColumn [output_mdb,'max_feat'] / length db_ReadColumn [output_mdb,'max_feat'];
+local avg_minfeat = add db_ReadColumn [output_mdb,'min_feat'] / length db_ReadColumn [output_mdb,'min_feat'];
+local avg_avgfeat = add db_ReadColumn [output_mdb,'avg_feat'] / length db_ReadColumn [output_mdb,'avg_feat'];
+local avg_maxcentr = add db_ReadColumn [output_mdb,'max_centr'] / length db_ReadColumn [output_mdb,'max_centr'];
+local avg_mincentr = add db_ReadColumn [output_mdb,'min_centr'] / length db_ReadColumn [output_mdb,'min_centr'];
+local avg_avgcentr = add db_ReadColumn [output_mdb,'avg_centr'] / length db_ReadColumn [output_mdb,'avg_centr'];
+
+print avg_maxfeat;
+print avg_minfeat;
+print avg_avgfeat;
+print avg_maxcentr;
+print avg_mincentr;
+print avg_avgcentr;
+
+endfunction

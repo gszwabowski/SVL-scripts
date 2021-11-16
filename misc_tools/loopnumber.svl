@@ -1,0 +1,16 @@
+#svl
+//Commentary by Greg Szwabowski 12/4/2020
+//This script is used to loop through a database and number each entry in a new field titled 'index'.
+
+global function loopnum [database_file]
+                local entry_key;
+local mdb_key = db_Open [database_file, 'read-write'];
+local entries = db_Entries mdb_key;
+local counter = 1;
+
+db_CreateField [mdb_key, 'index','int'];
+for entry_key in entries loop
+	db_Write [mdb_key, entry_key, tagpoke[[],'index', counter]];
+	counter = counter + 1;
+endloop
+endfunction

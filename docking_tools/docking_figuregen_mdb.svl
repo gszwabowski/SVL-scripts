@@ -1,0 +1,112 @@
+function fwrite_PNG;
+global function docking_figuregen_mdb [mdb, ribbon_type, ligand_color, rec_color, res_color, res_nums]
+//Author: Gregory L. Szwabowski, University of Memphis
+//
+//This script will allow a user to generate .PNG images of every ligand-receptor complex contained in a database.
+//Receptor ribbon color, ligand atom color and residue atom color (if desired) can be set using the color arguments.
+//
+//ARGUMENTS:
+//mdb: database containing docked poses
+//ribbon_type: type of backbone to be rendered
+//ligand_color: desired ligand atom color. Available colors are listed below in the PLOT_COLORS section.
+//rec_color: desired receptor ribbon color. 'default' will be the default MOE color scheme, otherwise use a color listed in PLOT_COLORS
+//res_nums: residue UID numbers entered as a vector of integers ex. [34, 65, 144]
+//
+//PLOT_COLORS:
+//['black','red','green','blue','yellow','cyan','magenta','orange','brown','pink','gray','darkRed','darkGreen','darkBlue','darkYellow','darkCyan','darkMagenta','darkOrange','darkBrown','darkPink']
+//
+//RIBBON TYPES:
+//['none', 'line', 'trace', 'flat', 'tube', 'slab', 'auto']
+//
+//EXAMPLE COMMAND W/ RESIDUES DISPLAYED:
+//docking_figuregen ['output.mdb', 'tube', 'green', 'red', 'blue', [100, 110, 114]]
+//
+//EXAMPLE COMMAND W/ NO RESIDUES DISPLAYED:
+//docking_figuregen ['output.mdb', 'tube', 'green', 'red', 'blue', []]
+
+//close any open structures
+Close [force:1, viewreset:1, delgobj:1];  
+
+local chain, entry, ligand_chain, receptor_chain, receptor_name, ligand_name, res_num;
+
+local entries = db_Entries [mdb];
+local i = 1;
+
+for entry in entries loop
+	local [receptor] = db_ReadFields [mdb, entry, 'receptor'];
+	local [ligand] = db_ReadFields [mdb, entry, 'mol'];
+	[receptor_chain, receptor_name] =db_CreateMolecule receptor;
+	[ligand_chain, ligand_name] =db_CreateMolecule ligand;
+
+	//hide all receptor ribbons/atoms
+	rSetRibbonEnable [oChildren receptor_chain, 0];
+	aSetHidden [oChildren oChildren Chains[], 1];
+
+	//render receptor and ligand atoms
+	rSetRibbonMode [oChildren receptor_chain, ribbon_type];
+	if rec_color == 'default' then
+		rSetRibbonColorBy [oChildren receptor_chain, 'r:aseg'];
+	else
+		rSetRibbonRGB [oChildren receptor_chain, icolor rec_color];
+		rSetRibbonColorBy [oChildren receptor_chain, 'rgb'];
+	endif
+	rSetRibbonEnable [oChildren receptor_chain, 1]; //render receptor
+	aSetHidden [cat oChildren oChildren ligand_chain, 0]; //render ligand atoms
+	aSetRGB [cat oChildren oChildren ligand_chain, icolor ligand_color];
+	aSetColorBy [cat oChildren oChildren ligand_chain, 'a:rgb'];
+
+	//render specific residues if res_nums argument is entered
+	if notnull res_nums then
+		local [residues] = oChildren receptor_chain;
+		aSetRGB [cat oChildren residues, icolor res_color]; //set rgb color for residue atoms
+		aSetColorBy [cat oChildren residues, 'a:rgb']; // change residue atom color
+		for res_num in res_nums loop
+			local rindex = indexof [res_num, rUID residues];
+			aSetHidden [cat oChildren residues(rindex), 0]; //render residue atoms
+		endloop
+	endif
+
+	//prompt user to adjust view when first receptor is rendered
+	if i == 1 then
+			local wkey = WindowCreate [
+			name : 'ViewPrompt',
+		location: 'MOE',
+		title : 'Adjust the view and visualization settings to your liking.',
+		Button: [
+					name : 'button',
+					text : 'OK'
+				]   	
+		];
+		local v = WindowWait [wkey];
+		WindowDestroy wkey;
+	endif
+
+	//export current view of system as a .png image
+	local image = ViewGetImage [];
+	fwrite_PNG [tok_cat[fbase mdb, '_entry_', totok i, '.png'], image, [
+		transparent_background: 1,
+		dpi: 600
+		]
+	];
+
+	sleep 1;
+
+	//re-hide receptor and ligand atoms
+	rSetRibbonEnable [oChildren receptor_chain, 0]; //render receptor
+	aSetHidden [oChildren oChildren ligand_chain, 1]; //render ligand atoms
+	
+	//hide residues
+	if notnull res_nums then
+		for res_num in res_nums loop
+			rindex = indexof [res_num, rUID residues];
+			aSetHidden [cat oChildren residues(rindex), 1]; //render residue atoms
+		endloop
+	endif
+	//destroy ligand/receptor before reading in the next entry
+		oDestroy [ligand_chain];
+	oDestroy [receptor_chain];
+
+	i = inc i;
+endloop 
+
+endfunction

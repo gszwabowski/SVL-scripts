@@ -1,0 +1,80 @@
+#svl
+//Commentary by Greg Szwabowski 12/4/2020
+//This script is used to determine which compounds appear in multiple hit lists when comparing multiple databases of hit lists.
+//Run this script in a folder containing hit list .mdb files and the results will appear in a database titled 'compounds.mdb'.
+//
+//BATCH USE:
+//To run this on the HPC, create a .sh file formatted like so:
+
+//#! /bin/csh
+//#SBATCH --ntasks=4
+//#SBATCH --partition=computeq
+//#SBATCH --job-name=6CM4_druglike_hitlist_comparison
+//#SBATCH --time=28800
+//
+//
+///public/apps/moe/moe2018/bin/moebatch -load ../hitlist_comparison_fast.svl \
+//-exec "hitlist_comparison_fast []"
+
+global function hitlist_comparison []
+
+local files = flist [[],'*.mdb'];
+local mdb, name, entry, entry2, total_count;
+local name_vector = [];
+local i=1;
+
+for mdb in files loop
+	local names = db_ReadColumn [mdb, 'name'];
+	name_vector = cat [name_vector, names];
+endloop
+
+name_vector = uniq name_vector;
+
+local compound_db = db_Open ['compounds.mdb', 'create'];
+
+db_EnsureField [ compound_db, 'name', 'char' ];
+
+for name in name_vector loop
+	db_Write [compound_db, 0, [name: swrite ['{G}', name]]];
+endloop
+
+local max_i = length files + 1;
+
+//loop
+	//db_EnsureField [ compound_db, tok_cat ['db_', totok i], 'int' ];
+	//i = i + 1;
+	//until i = max_i
+//endloop
+
+for mdb in files loop
+	db_EnsureField [ compound_db, fbase mdb, 'int' ];
+endloop
+
+db_EnsureField [ compound_db, 'total', 'int' ];
+
+Open 'compounds.mdb';
+
+local count = 0;
+
+local entries = db_Entries compound_db;
+
+i = 0;
+
+for entry in entries loop
+	for mdb in files loop
+		local entries2 = db_Entries mdb;
+		for entry2 in entries2 loop
+			if db_ReadFields [mdb, entry2, 'name'] === db_ReadFields [compound_db, entry, 'name'] then
+				count = count + 1;
+			endif
+		endloop
+		db_Write [compound_db, entry, tagpoke[[],fbase mdb, count]];
+		total_count = total_count + count;
+		count = 0;
+	endloop
+db_Write [compound_db, entry, [total: total_count]];
+total_count = 0;
+endloop
+endfunction
+
+	

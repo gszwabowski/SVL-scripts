@@ -1,0 +1,36 @@
+function feature_composition_db;
+function feat_dist_db_score_based;
+function db_ImportDB;
+function db_Merge;
+global function score_based_data_collection [score_type]
+
+local files = flist[];
+local [mask] = fext[files] == '';
+local folders = files | mask;
+local folder;
+local receptor_structures = flist ['E:/OneDrive - The University of Memphis/SBP/receptor_structures', '*.moe'];
+local i = 0;
+
+for folder in folders loop
+	i = inc i;
+	cd folder;
+	cd score_type;
+	feature_composition_db [folder];
+	feat_dist_db_score_based [receptor_structures(i)];
+	local mdb = db_Open ['ph4_distances_composition.mdb', 'create'];
+	local dist_mdb = 'ph4_distances.mdb';
+	local featcomp_mdb = 'ph4_feature_composition.mdb';
+	//import dist_mdb into mdb
+	db_ImportDB [mdb, dist_mdb, [], [], []];
+	
+	//merge mdb with featcomp_mdb
+	db_Merge [db1: mdb, db2: featcomp_mdb, key1: 'filename', key2: 'filename'];
+
+	//close any open structures
+	Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+	//return to folder with receptor ph4s
+	cd '../..';
+endloop
+
+endfunction
+        

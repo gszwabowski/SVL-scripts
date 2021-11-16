@@ -1,0 +1,41 @@
+#svl
+#Commentary by Greg Szwabowski 12/4/2020
+#This script is used to remove chirality constraints from molecules in a database.
+#Arguments
+#---------
+#mdb: database containing molecules
+#field1: DB field containing molecules
+#field2: desired name of new database field containing molecules stripped of chirality constraints.
+
+global function remove_chiconstraint [mdb, field1, field2]
+
+local mdb_key = db_Open [mdb, 'read-write'];
+local entries = db_Entries mdb;
+local ent;
+db_EnsureField [mdb, field2,'molecule'];
+
+for ent in entries loop
+	local [ligand] =db_ReadFields [mdb_key, ent,field1]; //get structure from fieldname
+	local [ligand_chain, ligand_name] =db_CreateMolecule ligand;
+	local akeys = Atoms[];
+	akeys = akeys | aAtomicNumber akeys > 1;
+    	akeys = akeys | aHeavyValence akeys >= 2;
+    	akeys = akeys | not aInHRing akeys;
+    	akeys = akeys | aHCount akeys < 2;
+
+    	akeys = akeys | (
+	   aHeavyValence akeys >= 3 and aGeometry akeys == 'sp3'
+	or aHeavyValence akeys >= 2 and aGeometry akeys == 'sp2'
+	);
+	
+	aSetForceRS [akeys, 0]; // remove chirality constraint
+	local name = tok_drop [ligand_name, -4];
+	cSetName [ligand_chain, name];
+
+
+	db_Write [mdb, ent, [mol: mol_Extract oChildren ligand_chain]];
+	oDestroy [ligand_chain]; //destroy one ligand before reading in the next
+endloop
+
+print 'done';
+endfunction

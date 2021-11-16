@@ -1,0 +1,52 @@
+//Commentary 5/12/21 by Greg Szwabowski
+//This script will allow a user to calculate the number of conformations per mseq
+//value (molecule) in a database. After the calculation, the minimum and maximum
+//number of conformations are returned.
+
+global function db_conf_range [mdb]
+local entry;
+local entries = db_Entries mdb;
+local mseqs = uniq db_ReadColumn [mdb, 'mseq'];
+
+local prev_mseq = db_ReadFields [mdb, first entries, 'mseq'];
+local prev_chi = db_ReadFields [mdb, first entries, 'chi'];
+local count = 0;
+local count_vector = [];
+local chi_count_vector = [];
+local chi_count = 1; //set chi_count at 1 for first entry (if all chi values for first entry's mseq value are the same, chi_count wouldn't be updated without setting chi_count to 1)
+
+write 'mseq\t# confs.\tchiral configurations\n';
+write '----\t--------\t----------------------\n';
+
+for entry in entries loop
+	local mseq = db_ReadFields [mdb, entry, 'mseq'];
+	local chi = db_ReadFields [mdb, entry, 'chi'];
+	if mseq == prev_mseq then //if the current mseq value matches the previous mseq value, molecule is the same. increase count
+		count = inc count;
+		if chi <> prev_chi then //if the current chi value does not match the previous chi value, it is a new chiral config. increase chi_count
+			chi_count = inc chi_count;
+			prev_chi = chi;
+		endif
+	elseif mseq <> prev_mseq and count <> 0 then //if the current mseq value is different from the previous mseq value, write counts for previous mseq
+		write ['{}\t{}\t\t{}\n', prev_mseq, count, chi_count];
+		count_vector = cat[count_vector, count];
+		chi_count_vector = cat[chi_count_vector, chi_count];
+		prev_mseq = mseq;
+		count = 1; //set count at 1 since mseq after prev_mseq should be counted
+		prev_chi = chi;
+		chi_count = 1;
+	endif
+endloop
+
+write ['{}\t{}\t\t{}\n', mseq, count, chi_count];
+
+local min_mseq_index = indexof[min count_vector, count_vector];
+local max_mseq_index = indexof[max count_vector, count_vector];
+
+write ['\nMinimum # of confs: {}\tmseq: {}\tchiral configurations: {}\n', min count_vector, mseqs(min_mseq_index), chi_count_vector(min_mseq_index)];
+write ['Maximum # of confs: {}\tmseq: {}\tchiral configurations: {}\n', max count_vector, mseqs(max_mseq_index), chi_count_vector(max_mseq_index)];
+
+endfunction 
+		
+	
+	

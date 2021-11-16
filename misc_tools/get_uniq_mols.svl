@@ -1,0 +1,43 @@
+#svl
+// Commentary by Greg Szwabowski 12/4/2020
+// This script is used to get unique molecules (i.e. 1 molecule per mseq) from a database containing many entries per mseq
+// Arguments
+// ---------
+// dst_mdb: desired name of output database
+// src_mdb: database containing molecules with many entries per mseq
+
+global function get_uniq_mols [src_mdb, dst_mdb];
+local field_names, field_types;
+
+local entry, mseq, db_mseq;
+db_Open [dst_mdb, 'create'];
+[field_names, field_types] = db_Fields src_mdb;
+local i = 0;
+
+while i < length field_names loop
+	i = i + 1;
+	db_EnsureField [dst_mdb, field_names(i), field_types(i)];;
+endloop 
+
+local mseqs = uniq db_ReadColumn [src_mdb, 'mseq'];
+local entries = db_Entries src_mdb;
+
+	for entry in entries loop
+		db_mseq = db_ReadFields [src_mdb, entry, 'mseq'];
+		print cat ['db_mseq:', db_mseq];
+		if isnull mseqs then 
+			break;
+		elseif db_mseq == first mseqs then
+			local entry_record = db_Read [ src_mdb, entry ];
+			db_Write [ dst_mdb, 0, entry_record ];
+			mseqs = dropfirst mseqs;
+		endif
+	endloop
+
+Open dst_mdb;
+
+write 'Done.\n';
+endfunction
+		
+	
+	

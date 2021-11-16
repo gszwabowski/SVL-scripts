@@ -1,0 +1,19 @@
+#svl
+//Commentary by Greg Szwabowski 12/4/2020
+//This script is used to run the Complementation.svl script on all databases in a directory.
+//Make sure to load the Complementation.svl script before running this script.
+function Complementation;
+
+global function dir_comp[]
+
+local file;
+local files = flist[[], '*.mdb'];
+//files = get [files, [8,9,10]];
+
+for file in files loop
+	Complementation [file, '', 1];
+endloop
+
+write 'Done.\n';
+
+endfunction

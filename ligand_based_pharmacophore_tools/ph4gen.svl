@@ -1,0 +1,85 @@
+//Commentary 8/27/2020
+//This script will generate individual pharmacophore .ph4 files from query databases
+//generated with the "querydbadd.svl" script.
+//
+//
+
+#svl
+function db_ImportDB;
+function fwrite_PH4;
+global function ph4gen[]; //mdb is mdb with elucidation results
+		
+		local mdb_key, mdb_key2, ents, ent;   	
+		local files = flist [[],'*_queries.mdb'];
+		local mdb;
+		const QFIELD = 'query';
+			local function get_envdata [mdb, name, default]
+   			print name; 			
+			local str = string db_GetFieldEnv [mdb, QFIELD, name];
+    			if isnull str then return default; endif
+    			return first first sread [str, '{v}'];
+		endfunction
+			local function ph4elu_queryinfo [mdb, ent]
+		
+   			local scheme = get_envdata [mdb, 'scheme'];		
+			local rad = get_envdata [mdb, 'trad', 1.0];		
+			local col = get_envdata [mdb, 'tcol', icolor 'yellow'];		
+			local expr = get_envdata [mdb, 'texpr'];			
+			local query = first db_ReadFields [mdb, ent, QFIELD];
+			local k, molname = '';
+
+    			local [fldname, fldtype] = db_Fields mdb;
+    				if k = indexof ['mol', fldname] then if fldtype(k) == 'molecule' then
+			local [mol] = db_ReadFields [mdb, ent, 'mol'];
+			molname = mol(1);
+    			endif endif
+
+    			local n = query(1);
+    			local type = keep [dropfirst query, n];
+    			local pos = split [drop [query, inc n], n];
+    			if length pos <> 3 then exit 'Corrupted data'; endif
+    			pos = pos * inv 1024;	
+			rad = rad[type]; 			
+			col = col[type];
+ 			expr = expr[type];
+    		local qdata = [
+			S: [
+	    		scheme: scheme,
+	    		matchsize: 0,
+	    		title: molname
+			],
+			F: [
+	    		expr: expr,
+	   		color: col,
+	    		x: pos(1), y: pos(2), z: pos(3),
+	    		r: rad,
+	    		ebits: rep [0, n],
+	    		gbits: rep [0x300, n]
+			]
+    		];
+			return qdata;
+			endfunction
+		
+// open pharmacophore elucidation database and find highest overlap & accuracy entries
+	local i;
+	for mdb in files loop
+		mdb_key = db_Open [mdb, 'read-write'];
+		ents = db_Entries mdb;
+		print ents;
+		if length (ents) == 0 then
+			print 'Nothing to generate';
+		else 
+			for ent in ents loop
+				local  index = db_ReadFields [ mdb, ent, 'index' ];
+				local pdata, ph4fname, ph4outfile;
+					pdata = ph4elu_queryinfo [mdb, ent];
+					print pdata;
+					ph4fname = tok_cat [ftail fbase db_Filename mdb, '_', totok index, '.ph4'];
+					fwrite_PH4 [ph4fname, pdata, [header:1]];
+			endloop
+		endif
+	endloop
+
+print 'done';
+
+endfunction

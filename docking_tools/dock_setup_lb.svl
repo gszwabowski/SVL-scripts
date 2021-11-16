@@ -1,0 +1,61 @@
+//Edit/Commentary by Greg Szwabowski 5/13/19
+//
+//
+//
+//
+//
+// 
+#svl
+function Protonate3D;       
+function pro_Superpose;
+function pro_Align;
+function Close;
+global function dock_setup_LB [database_file, ligand, database_field];
+
+		local mdb_key = db_Open [database_file, 'read-write'];
+  		local entry_key, receptor, atoms2, ligand_chain, ligand_name, receptor_chain, receptor_name, ref_chains, mask, ref_residues, rec_residues, ref_ligand, ligand_heavy, ref_heavy;   	
+		local entries = db_Entries mdb_key;
+
+
+		Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+		
+// open ligand
+		 Open ligand;
+		
+//  loop through the database and create each receptor 
+        for entry_key in entries loop
+		[receptor] =db_ReadFields [mdb_key, entry_key, [database_field]];
+		[receptor_chain, receptor_name] =db_CreateMolecule receptor;
+		[rec_residues] = cResidues receptor_chain;
+		
+		
+// protonate system
+	local chains = Chains[];
+	oDestroy chains(3);
+	local atoms = Atoms[];
+	Protonate3D [atoms,atoms,atoms,[],[],[]];
+
+// open sitefinder
+	run '/moe2018/svl/run/sitefind.svl';
+	
+// extend selection
+	local atom_set = Atoms[];
+	local sel_atoms = Atoms [] | aSelected Atoms [];
+	local residues = uniq oParent sel_atoms;
+	local new_atoms = cat oChildren residues;
+	local select_atoms = join [atom_set, new_atoms];
+	aSetSelected [select_atoms, 1];
+
+// open dock UI
+
+	run '/moe2018/svl/run/dock_ui.svl';
+	loop
+	until isnull WindowNameList[] == 1
+	endloop
+
+//  destroy one receptor before reading in the next
+	oDestroy [receptor_chain];
+
+endloop
+ print 'done';
+endfunction

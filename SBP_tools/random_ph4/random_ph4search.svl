@@ -1,0 +1,302 @@
+#svl
+
+//STRUCTURE BASED PHARMACOPHORE SEARCHING
+//
+//This script is used to perform pharmacophore searches within a directory of previously generated
+//pharmacophore (.ph4) files.
+//
+
+function Close;
+function Open;
+function prolig_Calculate;
+function pro_Contacts;
+function db_ImportASCII;
+function ph4_aType;
+function ph4_EditorWkeyList;
+function ph4_EditorGetData;
+function fwrite_PH4;
+function ph4_Search;
+
+
+
+global function random_ph4search [lig_mdb, ph4_dir, receptor_name, partial_features, db_active_mols, db_mols]
+//lig_mdb: compound database
+//receptor_name: name of receptor in double quotes
+//partial_features: # of features to match during ph4 search
+//db_active: % of compounds in lig_mdb possessing activity for a receptor of interest (ex. 15.9, *not* 0.159)
+//db_active_mols: # of compounds possessing activity for a target receptor
+//db_mols: # of unique molecules in lig_mdb
+
+local output = db_Open ['ph4_search_output_5feats.mdb', 'create'];
+db_CreateField [ output, 'Enrichment', 'float'];
+db_CreateField [ output, 'GH', 'float'];
+db_CreateField [ output, 'Active_Rate', 'float'];
+db_CreateField [ output, 'Hits', 'int'];
+db_CreateField [ output, 'Actives', 'int'];
+db_CreateField [ output, 'filename', 'char'];
+
+local ph4_files = flist[[ph4_dir],'*.ph4'];
+local ph4;
+local e_vals = [];
+local towrite;
+local towrite2;
+
+for ph4 in ph4_files loop
+
+	logfile 'log.txt';
+	ph4_Search [lig_mdb, ph4,
+		[
+            abspos                : 0,
+            action                : 0,
+            descexpr              : '',
+            esel                  : 0,
+	    matchsize             : partial_features, //tweak feature #
+            maxconfhits           : 0,
+            maxmolhits            : 0,
+            molfield              : 'mol',
+            o_molfield            : 'mol',
+            o_mseqfield           : 'mseq',
+            o_rmsdxfield          : 'rmsdx',
+            o_rscore_colfield     : 'rscore[F#]',
+            o_rscore_sumfield     : 'rscore',
+            out_append            : 0,
+            out_dbfile            : tok_cat [fbase ph4,'.mdb'],
+            out_dbv               : 0,
+            out_type_molecules    : 1,
+            sortby                : 'rmsdx',
+            use_mname             : 0,
+            use_mseqfield         : 0,
+            use_o_fileIdxField    : 0,
+            use_o_fileNameField   : 0,
+            use_o_hitmapfield     : 0,
+            use_o_hitmapfieldC    : 0,
+            use_o_hitsizefield    : 0,
+            use_o_hitsizefieldC   : 0,
+            use_o_molfield        : 1,
+            use_o_mseqfield       : 1,
+            use_o_rmsdfield       : 0,
+            use_o_rmsdxfield      : 1,
+            use_o_rowfield        : 0,
+            use_o_rscore_colfield : 1,
+            use_o_rscore_sumfield : 1,
+            use_o_rscore_vecfield : 0,
+            use_out_dbfile        : 1,
+            usepsilo              : 0
+        	]
+];
+
+	logfile 0;
+	logfile[];
+
+	//obtain hits from log file
+	local hitline = last droplast droplast freadb ['log.txt', 'line', INT_MAX];
+	
+	local ws = wordsplit [hitline, " "];
+	local hits = ws(3);
+	hits = atoi token hits;
+	
+
+	//search for actives
+	
+	local function pharm_count_all [receptor_name]
+	
+
+	local entry_key, entry_record, values, index;
+	local mdb_key = db_Open [tok_cat [fbase ph4,'.mdb'], 'read'];
+	local entries = db_Entries mdb_key;
+	local count = 0;
+	local prior_mseq = 0;
+	local i=0;
+	local sum = [];
+	
+	for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+		entry_record = db_Read [mdb_key, entry_key]; 
+		values = last untag entry_record; // removes tags from tagged vector, just values		
+
+		if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+			prior_mseq = values(2);
+			for index in values loop // for each mseq in all mseqs
+				i=i+1;
+				if eqL [receptor_name, index] then // if the top level arguments are identical AND 
+				if values(i-1)  then
+					count = count+1;
+				endif
+			endif
+			endloop
+		i=0;
+		endif
+
+		endloop
+
+		//print_count; // print how many 
+		sum = cat[sum,count];
+		count = 0;
+		prior_mseq= 0;
+		i=0;
+
+	for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+		entry_record = db_Read [mdb_key, entry_key]; 
+		values = last untag entry_record; // removes tags from tagged vector, just values		
+
+		if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+			prior_mseq = values(2);
+			for index in values loop // for each mseq in all mseqs
+				i=i+1;
+				if eqL [receptor_name, index] then // if the top level arguments are identical AND 
+				if values(i-2)  then
+					count = count+1;
+				endif
+			endif
+			endloop
+		i=0;
+		endif
+
+		endloop
+
+		//print_count; // print how many 
+		sum = cat[sum,count];
+		count = 0;
+		prior_mseq= 0;
+		i=0;
+
+	for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+		entry_record = db_Read [mdb_key, entry_key]; 
+		values = last untag entry_record; // removes tags from tagged vector, just values		
+
+		if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+			prior_mseq = values(2);
+			for index in values loop // for each mseq in all mseqs
+				i=i+1;
+				if eqL [receptor_name, index] then // if the top level arguments are identical AND 
+				if values(i-3)  then
+					count = count+1;
+				endif
+			endif
+			endloop
+		i=0;
+		endif
+
+		endloop
+
+		//print_count; // print how many 
+		sum = cat[sum,count];
+		count = 0;
+		prior_mseq= 0;
+		i=0;
+
+	for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+		entry_record = db_Read [mdb_key, entry_key]; 
+		values = last untag entry_record; // removes tags from tagged vector, just values		
+
+		if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+			prior_mseq = values(2);
+			for index in values loop // for each mseq in all mseqs
+				i=i+1;
+				if eqL [receptor_name, index] then // if the top level arguments are identical AND 
+				if values(i-4)  then
+					count = count+1;
+				endif
+			endif
+			endloop
+		i=0;
+		endif
+
+		endloop
+
+		//print_count; // print how many 
+		sum = cat[sum,count];
+		count = 0;
+		prior_mseq= 0;
+		i=0;
+
+	for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+		entry_record = db_Read [mdb_key, entry_key]; 
+		values = last untag entry_record; // removes tags from tagged vector, just values		
+
+		if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+			prior_mseq = values(2);
+			for index in values loop // for each mseq in all mseqs
+				i=i+1;
+				if eqL [receptor_name, index] then // if the top level arguments are identical AND 
+				if values(i-5)  then
+					count = count+1;
+				endif
+			endif
+			endloop
+		i=0;
+		endif
+
+		endloop
+
+		//print_count; // print how many 
+		sum = cat[sum,count];
+		count = 0;
+		prior_mseq= 0;
+		i=0;
+
+		
+
+////print_count; // print how many 
+	sum = cat[sum,count];
+
+	local actives = add sum;
+	return actives;
+	count = 0;
+	prior_mseq= 0;
+	i=0;
+
+	endfunction
+	
+	local actives = pharm_count_all [receptor_name];
+	local active_rate = (actives/hits);	
+
+	//print active_rate;
+	local enrichment = active_rate/(db_active_mols/db_mols);
+	local goodness = ((actives*((3*actives)+hits))/(4*hits*db_active_mols)) * (1 -(hits-actives)/(db_mols-db_active_mols));
+	//if enrichment == NaN then
+		//enrichment = 0;
+	//endif
+	print enrichment;
+	//print type enrichment;
+	//print type fdata.names;
+	//print type fdata.number;
+	//print fdata.mol(1);
+	//print length fdata.mol(1);
+
+	db_Write [
+	output, 0, [
+	Enrichment: enrichment,
+	GH: goodness,
+	Hits: hits,
+	Actives: actives,
+	Active_Rate: active_rate,
+	filename: swrite ['{G}', ph4]
+		]
+	];
+	
+	
+		
+	e_vals = cat [e_vals, enrichment];
+	local enr = tok_cat [totok enrichment,'\n'];
+	towrite = cat[towrite, enr];
+	
+	db_Close [tok_cat [fbase ph4,'.mdb']];
+	//if enrichment < 1 or enrichment == NaN or enrichment == 0 then
+		fdelete tok_cat [fbase ph4,'.mdb'];
+	//endif
+	print cat['iteration:', fbase ph4];
+endloop	
+
+//print e_vals;	
+print 'done creating database';
+
+fwrite['enrichments.txt', '{}', towrite];
+
+Open 'ph4_search_output.mdb';
+//print fdata;
+endfunction

@@ -1,0 +1,62 @@
+//Commentary by GLS 9/28/21
+//This script is used to import certain entries from a database containing
+//docked poses (mdb) into another database containing selected docked poses
+//(pose_mdb).
+//
+//ARGUMENTS
+//---------
+//mdb: database containing poses you wish to import to pose_mdb
+//pose_mdb: name of desired/existing selected pose database
+//entry_numbers: vector of numbers containing entries you want to import
+//ex. command: get_selected_poses ['GPR101_active_dock_1.mdb', 'gpr101_active_dock_initial_selected_compounds.mdb', [1553,5908,8838,9228]]
+
+global function get_selected_poses [mdb, pose_mdb, entry_numbers];
+
+local field_names, field_types;
+[field_names, field_types] = db_Fields mdb;
+
+//check if pose_mdb exists. if not, create the database and create fields
+//from mdb within pose_mdb
+if notnull flist[[], pose_mdb] == 0 then
+	local mdb_key = db_Open [pose_mdb,'create'];
+
+	//create fields from mdb in output_mdb
+	local i;
+	for i = 1, length field_names, 1 loop
+		db_EnsureField [pose_mdb, field_names(i), field_types(i)];
+	endloop
+endif
+
+//create field that denotes the source mdb of each entry
+db_EnsureField [pose_mdb, 'source_mdb', 'char'];
+
+//create tagged vector with source mdb name
+local value = [source_mdb: string mdb];
+
+//read each entry from mdb and write it to output_mdb
+local entries = db_Entries mdb;
+entries = get [entries, entry_numbers];
+
+local entry;
+for entry in entries loop
+	local entry_record = db_Read [mdb, entry];
+	entry_record = tagcat [entry_record, value];
+	db_Write [pose_mdb, 0, entry_record];
+endloop
+
+//convert database to docking database
+db_SetEnv [pose_mdb, '{mol}dbvbrowse_Dock', 'ligand'];
+db_SetEnv [pose_mdb, '{receptor}dbvbrowse_Dock', 'receptor'];
+db_SetEnv [pose_mdb, '{S}dbvbrowse_Dock', 'score'];
+
+//only open output_mdb if it is not currently open
+//if no databases are open, open pose_mdb
+if notnull dbv_KeyList[] == 0 then
+	dbv_Open pose_mdb;
+//else if the open databases aren't pose_mdb, open pose_mdb
+elseif dbv_KeyList[] <> db_Open[pose_mdb, 'read-write'] then
+	dbv_Open pose_mdb;
+endif
+
+endfunction
+

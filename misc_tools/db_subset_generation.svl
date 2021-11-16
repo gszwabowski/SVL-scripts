@@ -1,0 +1,69 @@
+//Commentary by Gregory Leon Szwabowski 10/15/2021
+//
+//Baker and Parrill Labs - University of Memphis
+//
+//This function is used to split a database into a specified number of subset
+//databases, ideally for use prior to conformational searches. Each subset
+//database will contain an equal number of entries except the last, which
+//will contain the equal number plus the remainder of entries.
+//
+//ARGUMENTS
+//=========
+//mdb: database you wish to create subsets of
+//num_dbs: desired number of subset databases
+
+global function db_subset_generation [mdb, num_dbs]
+
+local entries = db_Entries mdb;
+local entry;
+local num_entries = length entries;
+local subset_num = round (num_entries / num_dbs);
+local field_names, field_types;
+[field_names, field_types] = db_Fields mdb;
+local i = 1; //subset database counter
+local entry_counter = 1;
+
+for entry in entries loop
+	//if the database counter (i) is equal to the desired number of
+	//databases and the current entry is the first to be written to
+	//a new subset database, create a final subset database.
+	if i == num_dbs and entry_counter == 1 then
+		local dst_mdb = tok_cat [fbase mdb, '_', totok i, '.mdb'];
+		db_Open [dst_mdb, 'create'];
+		write ['Created subset database #{}.\n', i];
+		local j = 0; 
+		while j < length field_names loop
+			j = inc(j);
+			db_EnsureField [dst_mdb, field_names(j), field_types(j)];;
+		endloop
+		i = 0; //reset i so no further databases are created
+
+	//if the entry is the first to be written to the subset database
+	//and i does not equal the desired number of databases, create
+	//a new subset database.
+	elseif entry_counter == 1 and i <> num_dbs and i >= 1 then
+		dst_mdb = tok_cat [fbase mdb, '_', totok i, '.mdb'];
+		db_Open [dst_mdb, 'create'];
+		write ['Created subset database #{}.\n', i];
+		j = 0; 
+		while j < length field_names loop
+			j = inc(j);
+			db_EnsureField [dst_mdb, field_names(j), field_types(j)];;
+		endloop
+		i = inc i;
+	endif
+	
+	//write entry to created database (dst_mdb)
+	local entry_record = db_Read [mdb, entry];
+	db_Write [dst_mdb, 0, entry_record];
+	entry_counter = inc entry_counter;
+	if entry_counter > subset_num then
+		entry_counter = 1;
+	endif
+endloop
+
+write 'Done.\n';
+
+endfunction
+		
+	

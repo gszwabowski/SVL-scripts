@@ -1,0 +1,2074 @@
+#svl
+//	db.svl/confio.svl	I/O routines for conformational database
+//
+//	11-may-2017 (mk) allow to pack/unpack moe field conformations
+//	12-jul-2016 (ms) _db_Open 'read'
+//	14-apr-2016 (mk) add UndoSnapshot to copy confirmations
+//	25-jan-2016 (mk) adding missing fclose
+//	13-jan-2015 (jl) added atom-name checking to __mol_SameDbMolecule
+//	26-sep-2014 (ms) new ConfPack
+//	06-apr-2014 (ms) mol_RecodePosSplitE, mol_RecodePosMergeE
+//	11-jul-2013 (jl) switch to opt from comparison string
+//	05-jul-2013 (jl) support names wrt are-structures-unique?
+//	28-oct-2009 (ms) use "/" instead of "* inv" to recover positions
+//	09-dec-2008 (ms) fixed decoding of large coordinates
+//	24-sep-2008 (ms) fixed printing of molecule counts.
+//	26-sep-2007 (ms) unpack: detect and tolerate empty fields
+//	26-sep-2007 (ms) pack: dropping valid fields along with invalid ones
+//	19-sep-2007 (ms) skipping top unselected for esel
+//	19-sep-2007 (ms) restrict db_ConfFieldNames to (mol)':conf' only
+//	18-sep-2007 (ms) optional hydrogen conffield H-mask
+//	18-sep-2007 (ms) accept extra hydrogens, fix ..UseE detection
+//	17-sep-2007 (ms) silently ignore corrupted encoding of positions
+//	13-sep-2007 (ms) fixed packing of numerical vector fields
+//	10-sep-2007 (ms) sort output of db_ConfFieldNames
+//	07-sep-2007 (ms) included __mol_SameDbMolecule (from ph4_util.svl)
+//	06-sep-2007 (ms) loading panel for molconf_EditCell
+//	05-sep-2007 (ms) db_ConfFieldNames etc
+//	31-aug-2007 (ms) db pack/unpack
+//	15-mar-2007 (ms) created
+//
+// COPYRIGHT (C) 2007-2017 CHEMICAL COMPUTING GROUP ULC ("CCG").
+// ALL RIGHTS RESERVED.
+//
+// PERMISSION TO USE, COPY, MODIFY AND DISTRIBUTE THIS SOFTWARE IS HEREBY
+// GRANTED PROVIDED THAT: (1) UNMODIFIED OR FUNCTIONALLY EQUIVALENT SOFTWARE
+// DERIVED FROM THIS SOFTWARE MUST CONTAIN THIS NOTICE; (2) ALL CODE DERIVED
+// FROM THIS SOFTWARE MUST ACKNOWLEDGE THE AUTHOR(S) AND INSTITUTION(S); (3)
+// THE NAMES OF THE AUTHOR(S) AND INSTITUTION(S) NOT BE USED IN ADVERTISING
+// OR PUBLICITY PERTAINING TO THIS SOFTWARE WITHOUT SPECIFIC WRITTEN PRIOR
+// PERMISSION; (4) ALL CODE DERIVED FROM THIS SOFTWARE BE EXECUTED WITH THE
+// MOLECULAR OPERATING ENVIRONMENT LICENSED FROM CCG.
+//
+// CCG DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING
+// ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, AND IN NO EVENT
+// SHALL CCG BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+// ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER
+// IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
+// OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+#set title	'Conformational Database I/O Utilites'
+#set class	'MOE:basic-tools'
+#set version	'2017.05'
+
+const VERSION = bitshl [0x1, 1];	// bit0 is reserved for not_isnull(E)
+const PRECISION = 1000;			// keep only round (pos * PRECISION)
+const CHAT_DELAY = 0.3 + MOE_BATCH * 4;	// frequency of reporting progress
+
+function mol_aCount;
+
+// __mol_SameDbMolecule returns non-0 iff  the two given dbmol vectors,
+// X and Y, can be interpreted as two conformations generated from the
+// same molecule.  That is, both vectors must use the same molecular graph
+// and differ only in positions.  (To be more robust, we allow the bond
+// lists to be shuffled.)
+// NOTE: The atom orders must be identical.  The bond orders may differ.
+// NOTE: Chirality is compared modulo 3, i.e. 0==3
+
+global function __mol_SameDbMolecule [X, Y]
+
+    const IDX1 = [
+	MOL_ATOM_EL, MOL_ATOM_ION, MOL_ATOM_GEOM, MOL_ATOM_HINTLP, MOL_ATOM_NAME
+    ];
+    const IDX2 = append [IDX1, MOL_ATOM_CHIRALITY, MOL_ATOM_BONDS];
+
+	// Quickly check for consecutive conformations of the same dbmol graph.
+	// If we're checking atom-names, the same names have to be found in
+	// the same order in both structures.
+
+    if eqL [X(4)[IDX2], Y(4)[IDX2]] then return 1; endif
+
+	// Prepare for slower processing of dissimilar dbmol graphs.
+	// Start with faster checks for substantially different molecules.
+
+    local x = X(4);
+    local y = Y(4);
+    local n = length x(MOL_ATOM_EL);
+
+	// If the atoms and their chirality do not match, return 0.
+	// Chirality 3 is considered the same as 0 (i.e. unconstrained).
+
+    if neL [n, length y(MOL_ATOM_EL)] then return 0; endif
+    if neL [x[IDX1], y[IDX1]] then return 0; endif
+
+    local x_chi = x(MOL_ATOM_CHIRALITY);
+    local y_chi = y(MOL_ATOM_CHIRALITY);
+    if neL [x_chi, y_chi] then
+	if neL mod [[x_chi, y_chi], 3] then return 0; endif
+    endif
+
+	// Calculate and compare sorted bond lists.
+	// If the bond list has been seen before, re-use the sorted variety.
+
+    static xb, xbs, yb, ybs;
+    if neL [xb, xb=x(MOL_ATOM_BONDS)] then xbs = app sort xb; endif
+    if neL [yb, yb=y(MOL_ATOM_BONDS)] then ybs = app sort yb; endif
+
+    return eqL [xbs, ybs];
+endfunction
+
+
+// fread_length/swrite_length reads/writes a natural number in
+// a variable-length format:
+// k fits in 7 bits	==> use 1 byte (top bit 0)
+// k fits in 14 bits	==> use 2 bytes (top bits 1,0)
+// k larger		==> use 4 bytes (top bits 1,1)
+// !!! NOTE:
+// !!! do not use little endian: variable length encoding depends on MSB first
+
+local function swrite_length k
+    if k <= 0x7f then
+	return swriteb ['int1', k];
+    elseif k <= 0x3fff then
+	k = bitor [k, 0x8000];
+	return swriteb ['int2m', k];
+    else
+	k = bitor [k, 0xc0000000];
+	return swriteb ['int4m', k];
+    endif
+endfunction
+
+local function fread_length fnum
+    local k = bitand [freadb [fnum, 'int1', 1], 0xff];
+    if bitand [k, 0x80] === 0x80 then
+	k = bitshl [bitxor [k, 0x80], 8];
+	k = bitor [k, bitand [freadb [fnum, 'int1', 1], 0xff]];
+	if bitand [k, 0x4000] === 0x4000 then
+	    k = bitshl [bitxor [k, 0x4000], 16];
+	    k = bitor [k, bitand [freadb [fnum, 'int2m', 1], 0xffff]];
+	endif
+    endif
+    return k;
+endfunction
+
+#if 0
+// !!! DON'T USE; for CLI debugging only!
+global function _swrite_length k = swrite_length k;
+global function _fread_length fnum = fread_length fnum;
+global function _sread_length str
+    local fnum = fopen '';
+    fwriteb [fnum, 'char', str];
+    fseek [fnum, 0];
+    local len = fread_length fnum;
+    fclose fnum;
+    return len;
+endfunction
+#endif
+
+// Read-write floating point numbers in IEEE half-precision format.
+// IEEE 754r half-precision floats: sign=1, exponent=5, mantissa=10+1.
+// EXP_min(0x01)=-14, EXP_max(0x1e)=15, EXP_bias(0x0f)=15
+// EXP=0x00: zero and denormals, EXP=0x1f: inf and nan
+// max=65504, min_normal=2^-14=6.1e-5, min_denorm=2^-25=2.98e-8
+// 0:0x0000, -0:0x8000, Inf:0x7c00, -Inf:0xfc00
+
+const BIAS = 112;	// (FLOAT_BIAS=127) - (HALF_BIAS=15)
+
+local function swriteb_IEEE2m x
+    x = x * pow[2,-BIAS];
+    x = sreadb [swriteb ['IEEE4m', x], 'int4m', length x];
+    local s = bitand [bitshr [x, 31], 1];
+    local e = bitand [bitshr [x, 23], 0xff];
+    local m = bitand [bitshr [x, 13], 0x3ff];	// !!! should round ULP
+    // local m = int (bitand [x, 0x7fffff] * pow[2,-13]); // WRONG on 0y111...!
+
+	// !!! subnormal floats (e=0) are truncated to 0 by Intel.
+
+    local big = e >= 0x1f;
+    if anytrue big then
+	e | big = 0x1f;
+	m | big = 0;		// Inf
+	m | isnan x = 0x3ff;	// NaN
+    endif
+
+    s = bitshl [s, 15];
+    e = bitshl [e, 10];
+
+    return swriteb ['int2m', bitor [s,e,m]];
+endfunction
+
+local function sreadb_IEEE2m x
+    x = sreadb [x, 'int2m', length x];
+
+    local s = bitshr [x, 15];
+    local e = bitand [bitshr [x, 10], 0x1f];
+    local m = bitand [x, 0x3ff];
+
+    e | e == 0x1f = 0xff;
+
+    s = bitshl [s, 31];
+    e = bitshl [e, 23];
+    m = bitshl [m, 13];
+
+    x = sreadb [swriteb ['int4m', bitor [s,e,m]], 'IEEE4m', length x];
+    return x * pow[2,BIAS];
+endfunction
+
+// !!! IEEE2m should be added to readb/writeb formats.  In the meantime,
+// we'll use these:
+
+global function _swriteb_IEEE2m x = swriteb_IEEE2m x;
+global function _sreadb_IEEE2m x = sreadb_IEEE2m x;
+
+// mol_EncodePos and mol_DecodePos encode and decode atom positions of multiple
+// conformations of the same molecule to and from a flat byte vector.
+//
+// The positions are encoded using a dbmol-like (13-bit) encoding:
+// 1) convert to integers by multiplying by PRECISION
+// 2) encode the difference from the preceding position
+// 4) if possible, encode the 3 values in 3*13=39 bits (small: 5 bytes)
+// 5) otherwise, try 3*18=54 bits (medium: 7 bytes)
+// 6) otherwise, use 3*28=78 bits (large: 10 bytes)
+// 7) If PRECISION=1000, then the position differences must be at most
+//	8A for 5B encoding, 262A for 7B encoding, and 67,000 A for 10B encoding
+// Notes:
+// 1) Given (n-m) small values, (m-k) medium values, and k large values,
+//	we output 5*n+2*m+3*k bytes
+// 2) The first n*5 bytes store the signs and low 12 bits of all 3*n values
+//	Of the 40 bits of the 5 bytes:
+//	- The first bit stores the medium-or-large vs. small flag.
+//	- The next 3 bits store sign of x, y, z.
+//	- The next 12+12+12 bits store bits 0-11 of x, y, z.
+// 3) The next m*2 bytes store the next 5 bits of 3*m medium and large values
+//	Of the 16 bits in the 2 bytes:
+//	- The first bit stores the large vs. medium flag.
+//	- The next 5+5+5 bits store bits 12-16 of x, y, z.
+// 4) The next k*3 bytes store the next 8 bits of 3*k larges values
+//	Of the 24 bits in the 3 bytes:
+//	- The 8+8+8 bits store bits 17-24 of x, y, z.
+// 5) Bits 1,2,3 of the 1st byte store the signs of the 3 values
+// 6) Bit 0 of the 1st byte indicates that the value is medium or large
+// 7) Bit 0 of the 6th byte indicates that the value is large
+
+local function encode_pos1 pos
+    pos = int (pos * PRECISION);
+    pos = pos - apt rotrpoke [pos, 0];
+    local s = pos < 0;
+#if 1
+    pos = int abs pos;
+    if max app max pos > 0x1fdffff then
+	pos = minE [pos, 0x1fdffff];
+    endif
+#else
+    pos = bitand [abs pos, 0x1ffffff];	// max 26b = 2^16A
+#endif
+    local m_13 = orE (pos > 0xfff);	// 8A box (3*13+1=5B)
+    local m_18 = orE (pos > 0x1ffff); // 256A box (3*18+2=7B)
+
+    local [x, y, z] = pos;
+    local b = rep [[], 10];
+
+	// Store the m_13 mask and the signed lowest 12 bits of x,y,z in
+	// the first 5 bytes = 1 + 3*(12+1) bits.
+	// b1-5: (m_13, sign, x0), (x1, x2), (y0, y1), (y2, z0), (z1, z2)
+
+    b(1) = bitor cat [[m_13], bitshl [s, igen 3], [bitshl [bitand [x,0xf], 4]]];
+    b(2) = bitand [bitshr [x, 4], 0xff];
+    b(3) = bitand [y, 0xff];
+    b(4) = bitor [bitand [bitshr [y, 8], 0xf], bitshl [bitand [z, 0xf], 4]];
+    b(5) = bitand [bitshr [z, 4], 0xff];
+
+	// For positions selected by the m_13 mask, store the m_18 mask
+	// and the next 5 bits of x,y,z in the next 2 bytes = 1 + 3*5 bits.
+	// (The sign of x,y,z is already stored in the first 5 bytes).
+	// b6-7: (m_18, x12345, y12) (y345, z12345)
+
+    [x, y, z] = bitshr [[x,y,z] || [m_13], 12];
+    m_18 = m_18 | m_13;
+    b(6) = bitor [m_18, bitshl [bitand [x,0x1f],1], bitshl [bitand [y,0x3],6]];
+    b(7) = bitor [bitand [bitshr [y, 2], 0x7], bitshl [bitand [z, 0x1f], 3]];
+
+	// For positions selected by the m_18 mask, store the next 8 bits
+	// of x, y, z in the next 3 bytes = 3 * 8 bits.  (The maximum storable
+	// abs pos has 25=12+5+8 bits, i.e. <= 0x1ffffff.)
+	// b8-10: (x) (y) (z)
+
+    [x, y, z] = bitshr [[x,y,z] || [m_18], 5];
+    b(8) = bitand [x, 0xff];
+    b(9) = bitand [y, 0xff];
+    b(10) = bitand [z, 0xff];
+
+    return swriteb ['int1', cat b];
+endfunction
+
+local function encode_pos_0x13 pos
+    local nconf = length pos;
+    local natoms = l_length pos(1);
+
+    local i, b = rep [[], nconf];
+    for i = 1, nconf loop
+	b(i) = encode_pos1 pos(i);
+    endloop
+
+    return cat b;
+endfunction
+
+local function hmask_encode mask
+    if isnull mask then return []; endif
+    mask = resize [mask, ceil (length mask / 8) * 8];
+    mask = split [notnot mask, 8];
+    mask = bitshl [mask, [[0,1,2,3,4,5,6,7]]];
+    mask = app bitor mask;
+    return swriteb ['int1', mask];
+endfunction
+
+// mol_EncodePos encodes positions of the given molecule.
+// The input positions is a nested vector of shape [nconf,3,natoms].
+// The output is a flat vector of bytes (stored in the SVL type 'char').
+// Each encoding starts with a byte indentifying the encoding format
+// followed by variable-length encoding of the #conformations and #atoms.
+
+global function: mol_EncodePos [mol, pos, E]
+    if isnull pos then return []; endif
+    if neL app l_length pos then exit 'Illegal positions'; endif
+
+    local nconf = length pos;
+    local natoms = l_length pos(1);
+
+    if length E then
+	if neL [length E, nconf] then exit 'Vector of wrong length'; endif
+    endif
+
+	// If hydrogens present, store their mask.
+
+    local hmask = m_join [mol(4)(MOL_ATOM_EL), ['H', 'LP']];
+    if allfalse hmask then hmask = []; endif
+
+    return cat [
+	swriteb ['int1', bitor [VERSION, notnull E]],
+	swrite_length nconf,
+	swrite_length natoms,
+	swriteb_IEEE2m E,
+	encode_pos_0x13 pos,
+	hmask_encode hmask
+    ];
+endfunction
+
+// mol_RecodePosSplitE splits a given buffer of encoded conformations with
+// energy into 2 buffers: one for conformations and one for energies.
+// If the given buffer stores energies, then the energies will be returned
+// in a buffer encoded with the IEEE2m format.  Otherwise, we returned buffer
+// of energies will be empty.
+
+global function: mol_RecodePosSplitE [mol, buf]
+    if isnull buf then return []; endif
+    local fnum = fopen '';
+    fwriteb [fnum, 'char', buf];
+    fseek [fnum, 0];
+
+    local b1 = bitand [freadb [fnum, 'int1', 1], 0xff];
+    if neL [bitand [b1, 0xfe] === VERSION] then
+	exit 'Unknown encoding scheme';
+    elseif not bitand [b1, 1] then
+	return [buf, []];			// no energies
+    endif
+
+    local nconf = fread_length fnum;
+    local natoms = fread_length fnum;
+    local n = ftell fnum;
+
+    local E = freadb [fnum, 'char', nconf*2];
+
+    buf = cat [keep [buf, n], drop [buf, n+nconf*2]];
+    buf(1) = bitxor [b1, 1];
+
+    fclose fnum;
+
+    return [buf, E];
+endfunction
+
+// mol_RecodePosMergeE merges two given buffers, one for conformations and one
+// for energies, into one.  If the conformation buffer already contains
+// energies, we'll complain.  The energies buffer must be encoded in the IEEE2m
+// format.
+
+global function: mol_RecodePosMergeE [mol, buf, E]
+    if isnull buf then return []; endif
+    local fnum = fopen '';
+    fwriteb [fnum, 'char', buf];
+    fseek [fnum, 0];
+
+    local b1 = bitand [freadb [fnum, 'int1', 1], 0xff];
+    if neL [bitand [b1, 0xfe] === VERSION] then
+	exit 'Unknown encoding scheme';
+    elseif bitand [b1, 1] then
+	exit 'Energies already encoded';
+    endif
+
+    local nconf = fread_length fnum;
+    local natoms = fread_length fnum;
+    local n = ftell fnum;
+
+    if length E <> nconf*2 then exit 'Encoding of energies not valid'; endif
+    buf = cat [keep [buf, n], E, drop [buf, n+nconf*2]];
+    buf(1) = bitxor [b1, 1];
+
+    fclose fnum;
+
+    return buf;
+endfunction
+
+local function pos_decode1 [fnum, n]
+    // local b = bitand [split [freadb [fnum, 'int1', 5*n], n], 0xff];
+
+    local buf = freadb [fnum, 'int1', 5*n];
+    if neL [length buf, 5*n] then return [[], [], []]; endif
+    local b = bitand [split [buf, n], 0xff];
+
+	// b1-5: (m_13, sign, x0), (x1, x2), (y0, y1), (y2, z0), (z1, z2)
+
+    local m_13 = bitand [b(1), 1];
+    local s = bitand [[b(1)], [0x2, 0x4, 0x8]];
+    local x = bitor [bitshl [b(2), 4], bitshr [b(1), 4]];
+    local y = bitor [bitshl [bitand [b(4), 0xf], 8], b(3)];
+    local z = bitor [bitshl [b(5), 4], bitand [bitshr [b(4), 4], 0xf]];
+
+	// b6-7: (m_18, x12345, y12) (y345, z12345)
+
+    local n2 = add m_13;
+    if n2 then
+	b = bitand [split [freadb [fnum, 'int1', 2*n2], n2], 0xff];
+	local m_18 = bitand [b(1), 1];
+	local x2 = bitand [bitshr [b(1), 1], 0x1f];
+	local y2 = bitor [
+	    bitshl [bitand [b(2), 0x7], 2],
+	    bitand [bitshr [b(1), 6], 0x3]
+	];
+	local z2 = bitand [bitshr [b(2), 3], 0x1f];
+
+	    // b8-10: (x) (y) (z)
+
+	local n3 = add m_18;
+	if n3 then
+	    b = bitand [split [freadb [fnum, 'int1', 3*n3], n3], 0xff];
+	    x2 | m_18 = bitor [bitshl [b(1), 5], x2 | m_18];
+	    y2 | m_18 = bitor [bitshl [b(2), 5], y2 | m_18];
+	    z2 | m_18 = bitor [bitshl [b(3), 5], z2 | m_18];
+	endif
+
+	x | m_13 = bitor [bitshl [x2, 12], x | m_13];
+	y | m_13 = bitor [bitshl [y2, 12], y | m_13];
+	z | m_13 = bitor [bitshl [z2, 12], z | m_13];
+    endif
+
+    [x, y, z] = sgn [[x, y, z], not s];
+    x = pscan x;
+    y = pscan y;
+    z = pscan z;
+    return [x,y,z] / PRECISION;		// use "/", not "* inv" (precision)
+endfunction
+
+local function pos_decode_0x13 [fnum, nconf, natoms]
+    local i, pos = rep [[], nconf];
+    for i = 1, nconf loop
+	pos(i) = pos_decode1 [fnum, natoms];
+	if neL [l_length pos(i), natoms] then return []; endif
+    endloop
+    return pos;
+endfunction
+
+local function hmask_decode [fnum, natoms]
+    local nbytes = ceil (natoms / 8);
+    local mask = freadb [fnum, 'int1', nbytes];
+    if neL [length mask, nbytes] then return []; endif
+    mask = bitand [0x1, cat bitshr [mask, [[0,1,2,3,4,5,6,7]]]];
+    return resize [mask, natoms];
+endfunction
+
+// mol_DecodeInfo returns information about an encoded positions.
+
+global function: mol_DecodeInfo [mol, buf]
+    if isnull buf then return []; endif
+    local info = [];
+
+    local fnum = fopen '';
+    fwriteb [fnum, 'char', buf];
+    fseek [fnum, 0];
+
+    local b1 = bitand [freadb [fnum, 'int1', 1], 0xff];
+    info.nconf = fread_length fnum;
+    info.natoms = fread_length fnum;
+    info.addH = 0;	// Hydrogens have been added to heavy-atom-only mol
+
+    if neL [info.natoms, mol_aCount mol] then
+	local m_heavy = m_diff [mol(4)(MOL_ATOM_EL), ['H', 'LP']];
+	if eqL [add m_heavy, info.natoms] then
+	    info.addH = not m_heavy;
+	endif
+    endif
+
+    info.E = bitand [b1, 1];
+    info.version = bitand [b1, 0xfe];
+
+    fclose fnum;
+
+    return info;
+endfunction
+
+// mol_DecodePos decodes positions of the given molecule.
+// The input is a flat vector of bytes (SVL type 'char' or 'num').
+// The output positions form a nested vector of shape [nconf,3,natoms].
+
+global function: mol_DecodePos [mol, buf]
+    if isnull buf then return []; endif
+    local fnum = fopen '';
+    fwriteb [fnum, 'char', buf];
+    fseek [fnum, 0];
+
+    local pos;
+    local b1 = bitand [freadb [fnum, 'int1', 1], 0xff];
+    local nconf = fread_length fnum;
+    local natoms = fread_length fnum;
+    local E = [], hmask = [];
+
+    if bitand [b1, 1] then
+	E = sreadb_IEEE2m freadb [fnum, 'char', nconf*2];
+    endif
+
+    if bitand [b1, 0xfe] === VERSION then
+	pos = pos_decode_0x13 [fnum, nconf, natoms];
+	if length pos then
+	    hmask = hmask_decode [fnum, natoms];
+	elseif length E then
+	    E = [];
+	endif
+    else
+	exit 'Unknown encoding scheme';
+    endif
+
+	// !!! report no conformations if field is corrupted
+	// (The caller can check if adding/removing hydrogens can fix it).
+
+    local nmolatoms = mol_aCount mol;
+    if neL [natoms, nmolatoms] then
+	if neL [add not hmask, nmolatoms] then return []; endif
+	if neL [length hmask, natoms] then return []; endif
+
+	local i;
+	for i = 1, nconf loop
+	    pos(i) = pos(i) || [not hmask];
+	endloop
+    endif
+
+    fclose fnum;
+    return [pos, E];
+endfunction
+
+// _64_encodeln_pos encodes positions into a stream of bytes
+// in radix-64 format.  The input vector is a nested vector of numbers
+// of shape [nconf,3,natoms].  The output vector is a vector of lines,
+// each line (except for the last) is formed of 76 printable characters.
+// The lines do not contain the end-of-line characters.
+
+#ifnbif _r64_encodeln_pos
+global function: _r64_encodeln_pos pos
+    local nconf = length pos;
+    local ndim = length pos(1);
+    local natoms = l_length pos(1);
+
+    local err = neL [ndim, 3] or neL app length pos or neL app l_length pos;
+    if err then exit 'Input has wrong shape'; endif
+
+	// This is really just a faster version of
+	// pos = cat cat app tr pos;
+
+    local idx1 = resize [[0,1,2] * natoms, natoms*3] + stretch [igen natoms, 3];
+    local idx2 = dec igen nconf * (3 * natoms);
+    local idx = resize [idx1, nconf * 3 * natoms] + stretch [idx2, 3 * natoms];
+    pos = get [cat cat pos, idx];
+
+    local str = r64_encodeln_ieee4l pos;
+
+    if not call[] then return str; endif
+    apt write ['{|!}\n', str];
+endfunction
+#endif
+
+// _r64_decode_pos decodes positions from a stream of bytes
+// in radix-64 format.  The input vector is a vector of lines of printable
+// charecters produced by function __r64_encode_pos.  The output is
+// a vector of numbers of shape [nconf,3,natoms].
+
+#ifnbif _r64_decodeln_pos
+global function: _r64_decodeln_pos [lines, natoms]
+    local pos = r64_decodeln_ieee4l lines;
+    local nconf = length pos / (natoms * 3);
+    if mod [length pos, nconf] then exit 'Input does not match #atoms'; endif
+
+	// This is really just a faster version of
+	// pos = app tr split [pos, 3, natoms];
+
+    local na = nconf * natoms;
+    local idx1 = resize [[0,1,2] * natoms, natoms*3] + stretch [igen natoms, 3];
+    local idx2 = dec igen nconf * (3 * natoms);
+    local idx = resize [idx1, nconf * 3 * natoms] + stretch [idx2, 3 * natoms];
+    pos = split [perm [pos, idx], natoms, 3];
+
+    return pos;
+endfunction
+#endif
+
+// moe2mol converts a moe-vector to a mol-vector.
+// TODO: Speed up in the future with new helper C functions. Only parts of
+// the molecule information is needed for the conformation packing.
+
+local function moe2mol moe
+    local psys = SystemPush [];
+    local mol = moe_CreateMOL moe;
+    SystemPop psys;
+    return mol;
+endfunction
+
+// moepos2moe adds atom positions to a moe-vector. 
+// TODO: Speed up in the future with new helper C functions. Only parts of
+// the molecule information is needed for the conformation packing.
+
+local function moepos2moe [moe, pos]
+    local psys = SystemPush [];
+    local [chn, gobj, opt] = _moe_Create [moe];
+    aSetPos [cat cAtoms chn, pos];
+    moe = _moe_Extract [chn, gobj, [mol_name: opt.mol_name]];
+    GDestroy gobj;
+    SystemPop psys;
+    return moe;
+endfunction
+
+// moe_EncodePos encodes positions of the given moe field molecule.
+// The input positions is a nested vector of shape [nconf,3,natoms].
+// The output is a flat vector of bytes (stored in the SVL type 'char').
+
+global function moe_EncodePos [moe, pos, E]
+    if isnull pos then return []; endif
+    if neL app l_length pos then exit 'Illegal positions'; endif
+    if length E then
+	if neL [length E, length pos] then exit 'Vector of wrong length'; endif
+    endif
+
+	// Quick and dirty conversion from moe-vector to mol-vector
+	// for encoding. Should be sped up in the future; only the
+	// atom count and atom element types are needed.
+
+    return mol_EncodePos [moe2mol moe, pos, E];
+endfunction
+
+// moe_DecodePos decodes positions of the given moe field molecule.
+// The input is a flat vector of bytes (SVL type 'char' or 'num').
+// The output positions form a nested vector of shape [nconf,3,natoms].
+
+global function moe_DecodePos [moe, buf]
+    if isnull buf then return []; endif
+
+	// Quick conversion from moe-vector to mol-vector for decoding.
+	// Should be sped up in the future; only the atom count is needed.
+
+    return mol_DecodePos [moe2mol moe, buf];
+endfunction
+
+// moe_DecodeInfo returns information about an encoded positions.
+
+global function moe_DecodeInfo [moe, buf]
+    if isnull buf then return []; endif
+
+	// Quick conversion from moe-vector to mol-vector for decoding.
+	// Should be sped up in the future; only the atom count and
+	// atom element types are needed.
+
+    return mol_DecodeInfo [moe2mol moe, buf];
+endfunction
+
+// ====================== DB converters ======================
+
+// conffield_validate validates a given conffield and return the mol and
+// conf portions of its name.  If the field is valid, the function returns
+// a pair of ['<molfield>','conf'], such that conffied='<molfield>:conf'.
+// Otherwise, the function reports an error.
+
+local function conffield_validate [mdb, conffield, _mfield]
+    if anytrue _mfield then return _mfield; endif
+
+	// Decompose and validate the conf.field name.
+
+    local cstr = string conffield;
+    local ctok = app token split [cstr, btoc (cstr == ":")];
+    if length ctok <> 3 then exit 'Name not of the form "mol:conf"'; endif
+
+	// Validate the molecule field.
+
+    local mfield = ctok(1);
+    local [fldname, fldtype] = db_Fields mdb;
+    local type = fldtype | fldname == mfield;
+
+    if m_diff [mfield, fldname] then
+	exit twrite ['Field {} does not exist', mfield];
+    endif
+    if m_diff [type, ['molecule', 'moe']] then	// allow both: molecule + moe
+	exit twrite ['Field {} is not a molecule field', mfield];
+    endif
+
+    return [mfield, ctok(3)];
+endfunction
+
+// db_ConfFieldEnsure initializes a conformation field.  Use opt.E=1
+// if energies are stored.
+// Note: do _not_ use the _field parameter. It is not supported.
+
+global function: db_ConfFieldEnsure [mdb, conffield, use_E, _mfield]
+    conffield_validate [mdb, conffield, _mfield];	// validate the name
+
+	// Prepare the field and its environment.
+
+    db_EnsureField [mdb, conffield, 'byte'];
+    db_SetFieldEnv [mdb, conffield, 'editor', 'molconf_EditCell'];
+    if length use_E then
+	db_SetFieldEnv [mdb, conffield, 'E', select ['1','0',use_E]];
+    endif
+endfunction
+
+// db_ConfFieldNames returns the names of all conformation fields.
+// These are bytefields whose names are of form '<molfield>:conf',
+// where '<molfield>' is the name of an existing molecular field.
+// If mfield is not [], it must be a pattern that matches the mol.field.
+// Notes:
+// - Only ':conf' suffix is allowed after the name of the mol.field.
+// - We do not perform any other validation of the conf. fields.
+
+global function: db_ConfFieldNames [mdb, mfield]
+    local [fldname, fldtype] = db_Fields mdb;	// allow both: molecule + moe
+    local mfields = fldname | m_join [fldtype, ['molecule', 'moe']];
+    local bfields = fldname | fldtype == 'byte';
+    if anytrue mfield then
+	mfields = findmatch [mfield, mfields];
+    endif
+    return join [tok_cat [mfields, ':conf'], bfields];
+endfunction
+
+// db_ConfIsPacked returns 1 iff the given mdb is a packed db.
+// If the optional 2nd arg, mfield, is given, the function returns 1 only
+// if the name of the packed molecule field is mfield.
+
+global function: db_ConfIsPacked [mdb, mfield]
+    if not isscalar mdb then
+	if isnull mfield then return app db_ConfIsPacked mdb; endif
+	return apt db_ConfIsPacked [mdb, lhs [mfield, mdb]];
+    endif
+
+    return notnull db_ConfFieldNames [mdb, mfield];
+endfunction
+
+// db_ConfFieldUseE returns 1 if the given conf. name stores energy.
+// Note: do _not_ use the _mfield parameter. It is not supported.
+
+global function: db_ConfFieldUseE [mdb, conffield, _mfield]
+    local [molfield] = conffield_validate [mdb, conffield, _mfield];
+
+	// To detect the presence of energy, we first look
+	// if the field environent flag "E" value is '1' or '0'.
+	// If the flag "E" is not set, we read the first record
+	// and detect the presence of energy in that record.
+
+    local eflag = db_GetFieldEnv [mdb, conffield, 'E'];
+    if m_diff [eflag, ['1','0']] then
+	local e1 = db_NextEntry [mdb, 0];
+	if e1 then
+	    local mol_conf = [molfield, conffield];
+	    mol_conf = db_ReadFields [mdb, e1, mol_conf];
+
+		// Check for 'moe' field type and use appropriate function.
+
+	    if moe_IsMOE mol_conf then
+		eflag = select ['1', '0', (moe_DecodeInfo mol_conf).E];
+	    else
+		eflag = select ['1', '0', (mol_DecodeInfo mol_conf).E];
+	    endif
+	endif
+    endif
+
+    return eflag === '1';
+endfunction
+
+// __db_Molfield returns the names of molecule fields of the given db.
+//
+// - if opt.mol exists, list it first
+// - list packed fields before unpacked
+// - list 'molecule' fields before 'moe' fields
+//
+// - opt.packed specifies the treatment of packed fields (default=0)
+//	 0: list packed fields before unpacked (default)
+//	    if opt.mol exists, report it first whether or not it is packed
+//	 1: list packed fields first before any unpacked (incl. opt.mol)
+//	 2: list only packed fields; don't list opt.mol if it is unpacked
+//	-1: list unpacked fields first before any packed (incl. opt.mol)
+//	-2: list only unpacked fields; don't list opt.mol if it is packed
+//
+// - opt.moeType specifies the treatment of 'moe' fields (default=0)
+//	 0: ignore 'moe' fields (default)
+//	 1: allow 'moe' fields, but list 'molecule' fields first
+//	 2: allow 'moe' fields and list 'moe' fields first
+//	 3: allow only 'moe' fields
+//	-1: allow 'moe' fields; treat both 'moe' and 'molecule' as equals
+
+global function: __db_Molfield [db, opt]
+    if not isscalar db then return apt __db_Molfield [db, [opt]]; endif
+
+    opt = tagcat [opt, [
+	mol:		'',	// if exists, list it first
+	noerr:		0,	// 1=if db does not open, return []
+	packed:		0,	// 0=list opt.mol, then packed, then unpacked
+	moeType:	0	// 0=ignore 'moe' fields
+    ]];
+
+    function BadVal x = exit twrite ['Illegal value of opt.{}', x];
+    if not isscalartok opt.mol			then BadVal 'mol'; endif
+    if m_diff [[opt.packed],[-2,-1,0,1,2]]	then BadVal 'packed'; endif
+    if m_diff [[opt.moeType], [-1,0,1,2,3]]	then BadVal 'moeType'; endif
+
+	// Get the field names & types
+
+    local dbKey = _db_Open [db, 'read'];
+    if not dbKey then
+	if opt.noerr then return []; endif
+	exit twrite ['Database {t:"\'} failed to open', db];
+    endif
+
+    local [fldName, fldType] = db_Fields dbKey;
+    db_Close dbKey;
+
+	// Find the index of molecule fields
+
+    local k		= x_join [fldType, 'molecule'];
+    local moeType	= opt.moeType;
+
+    if moeType then
+	local k2	= x_join [fldType, 'moe'];
+	if eqL [moeType, -1] then	k = sort cat [k, k2];	// same
+	elseif eqL [moeType, 1] then	k = cat [k, k2];	// mol first
+	elseif eqL [moeType, 2] then	k = cat [k2, k];	// moe first
+	elseif eqL [moeType, 3] then	k = k2;			// only moe
+	else				exit 'Illegal opt.moeType';
+	endif
+    endif
+
+	// If there are no fields, return now.
+
+    k = pack k;
+    if isnull k then return []; endif
+
+	// Detect packed and unpacked fields.  Prepare field rank, r,
+	// so that higher r means "more desirable".
+	// (By default, "packed" is more desirable, i.e. r=is_packed.)
+
+    local molField	= fldName[k];
+    local byteField	= fldName | fldType == 'byte';
+    local r		= m_join [tok_cat [molField, ':conf'], byteField];
+    local packed	= opt.packed;
+
+	// packed >= 0: packed is more desirable (r=1).
+	// packed < 0:  unpacked is more desirable (r=1).
+	// Thereafter, ensure packed=|packed|=0,1,2.
+
+    if packed < 0  then r = not r; packed = -packed; endif
+
+	// If |packed|=2, strip the undesirable type.
+
+    if packed == 2 then [r, k] = [r, k] || [r]; endif
+
+	// If opt.mol is specified and found, move it to the front.
+	// If |packed|=1, move it only to the front within the set of
+	// fields of the same packed/unpacked type.
+
+    local m;
+    if allfalse opt.mol then				// opt.mol not given
+    elseif allfalse (m = (fldName[k] == opt.mol)) then	// opt.mol not found
+    elseif eqL [packed, 1] then
+	r = r*2;		// ensure packed/unpacked stay together
+	r | m = inc (r | m);	// opt.mol more desirable
+    else
+	r | m = 2;		// put opt.mol first (before all)
+    endif
+
+	// Return the list of all molecule names found,
+	// with higher values of r first.
+
+    k = k[x_sort neg r];
+    return fldName[k];
+endfunction
+
+// molconf_EditCell implements the "Open/Edit" action in the DBV cell popup.
+// The function is registered via the db.env.variable "editor".
+//
+// WARNING: Applications creating "mol:conf" fields should set:
+//	db_SetFieldEnv[db, conffield, 'editor', 'molconf_EditCell'];
+//	db_SetFieldEnv[db, conffield, 'E', select ['1', '', use_E]];
+
+global function molconf_EditCell [mdb, ent, conffield, value]
+    static err = '';
+
+    local [res,code] = task_wfork [errmsg:'ignore'];
+    if code == 'child' then
+
+	    // Extract the name of the molecule field from then name
+	    // of the conformation field.  We assume that the conformation
+	    // field is named "mol:conf", where "mol" is the name of
+	    // the molecule field.
+
+	local molfield = string conffield;
+	molfield = molfield | not pscan (molfield == ":");
+	molfield = token molfield;
+
+	    // Verify that molfield is a molecule field.
+
+	local [fldname, fldtype] = db_Fields mdb;
+	local k = indexof [molfield, fldname];
+	if not k then
+	    err = twrite ['Molecule field \'{}\' does not exist.', molfield];
+	    exit[];
+	    exit '!';
+	elseif m_diff [fldtype(k), ['molecule', 'moe']] then
+	    err = twrite ['Field \'{}\' is not a molecule field.', molfield];
+	    exit[];
+	endif
+
+	    // Verify that molfield is combatible with conffield
+	    // (version-dependent code):
+
+	local [mol] = db_ReadFields [mdb, ent, molfield];
+	local moeType = fldtype(k) == 'moe';	// Is this a 'moe' field?
+
+	local b1 = bitand [value(1), 0xff];
+	if neL [bitand [b1, 0xfe], VERSION] then
+	    err = 'Unknown encoding scheme.';
+	    exit[];
+	endif
+
+	    // If 'moe' type field is used convert its moe-vector to
+	    // a mol-vector for easy position decoding/handling.
+
+	local moe = mol;	// !!! retain moe-vector for later
+	if moeType then
+	    mol = moe2mol moe;
+	endif
+
+	local info = mol_DecodeInfo [mol, value];
+	local natoms = mol_aCount mol;
+	local nres = mol_rCount mol;
+	local pos = [], E = [];
+
+	if anytrue info.addH then
+	    mol = mol_aMask [mol, not info.addH];
+	    natoms = mol_aCount mol;
+	endif
+
+	[pos, E] = mol_DecodePos [mol, value];
+
+	if isnull pos then
+	    err = 'No conformations.';
+	    exit[];
+
+	elseif length uniq append [app l_length pos, natoms] <> 1 then
+	    // if l_length pos(1) <> mol_aCount mol then
+	    err = twrite [
+		'The molecule field \'{}\' and\n'
+		'the conformation field \'{}\'\n'
+		'are not compatible.',
+		molfield, conffield
+	    ];
+	    exit[];
+	endif
+
+	if not natoms then exit[]; endif	// safety
+
+	    // Estimate number of residues. If there are more than 32000
+	    // force splitting into chains (#res limit in chains!).
+	    // Set default of split_chains option on if unpacking a
+	    // 'moe' field with >200 residues (e.g. proteins).
+
+	nres = length pos * nres;
+	local split_chains = (moeType and nres > 200) or nres > 32000;
+
+#if 0
+	local msg = twrite [
+	    'Copy {} Conformation{} To MOE?',
+	    length pos,
+	    select ['s', '', length pos <> 1]
+	];
+	if not YesNo msg then exit[]; endif
+
+	UndoSnapshot [];
+
+#else
+	local function format_field field
+	    if tok_length field > 25 then
+		field = tok_cat [ token keep [string field, 25], '...'];
+	    endif
+	    return field;
+	endfunction
+
+	local function cell_label[key, field, entry_key]
+	    local entry = indexof [entry_key, dbv_Entries key];
+	    return token swrite ['({.30}, {})', format_field field, entry];
+	endfunction
+
+	local panel = [
+	    title : 'Copy Conformations To MOE',
+	    Text : [
+		title : 'Source Database:',
+		name : 'file',
+		sensitive : 0,
+		len : 30,
+		extendH : 1
+	    ],
+	    Label : [
+		title :'Source Cell:',
+		text : cell_label [mdb, conffield, ent]
+	    ],
+	    Label : [
+		title :'Conformations:',
+		text : totok length pos
+	    ],
+	    Separator : [ flushLeft:1 ],
+	    Checkbox : [
+		title:'Options:',
+		name : 'replace',
+		text : 'Clear molecular data',
+		bubbleHelp : 'Clear existing MOE molecule before copying.'
+	    ],
+	    Checkbox : [
+		name : 'mchains',
+		text : 'Multiple chains',
+		sensitive: nres <= 32000,	// !!! for #res in chain limit
+		bubbleHelp : 'Split conformers into separate chains.'
+	    ]
+	];
+	local v = WindowPrompt [panel, [
+	    file: db_Filename mdb,
+	    mchains: split_chains		// set default
+	]];
+
+	UndoSnapshot [];
+
+	    // Copy molecule.
+
+	if v.replace then Close[force:1]; endif
+	split_chains = v.mchains;
+#endif
+
+	local m, mlist = [], clist = [];
+
+	    // Unpack 'moe' conformations.
+	    // TODO: Should this be done in a separate system and then
+	    //       be copied over?
+
+	if moeType then
+	    for m = 1, length pos loop
+
+		    // Copy view, box, wall and graphics objects only for
+		    // the first conformation.
+
+		local m1 = m == 1;
+		local [c] = _moe_Create [
+		    moe, [view: m1, box: m1, wall: m1, graphics: m1]
+		];
+		aSetPos [cat cAtoms c, pos(m)];	// set positions after creation
+		clist(m) = c;
+	    endloop
+
+		// Post reparenting into one chain.
+
+	    if not split_chains then
+		clist = cat clist;
+		oReparent [cat cResidues dropfirst clist, first clist];
+		oDestroy dropfirst clist;
+	    endif
+
+	    // Unpack 'molecule' conformations.
+
+	else
+	    for m = 1, length pos loop
+		mol(4)(MOL_ATOM_X) = pos(m)(1);
+		mol(4)(MOL_ATOM_Y) = pos(m)(2);
+		mol(4)(MOL_ATOM_Z) = pos(m)(3);
+		if split_chains then
+		    mol_Create mol;
+		else
+		    mlist(m) = mol;
+		endif
+	    endloop
+
+	    if not split_chains then
+		mol = mol_Cat mlist;
+		mol(2) = app first mol(2);
+		mol(2)(MOL_CHAIN_NRES) = l_length mol(3);
+		mol_Create mol;
+	    endif
+	endif
+	exit[];
+
+    elseif code == 'error' then
+	Warning 'Cannot edit cell contents.';
+
+    elseif tok_length err then
+	Warning tok_cat ['Cannot edit cell contents.\n\n', err];
+    endif
+endfunction
+
+// write_command prints the name and the argument of a given command (fcn.call)
+// to the CLI.  Called at the beginning of db_ConfPack and db_ConfUnpack.
+
+local function write_command [fcnname, src, dst, opt]
+
+	// Set src display string.
+
+    if isnull src then src = "[]"; endif
+    if isscalarnum src then if src = db_Key src then
+	src = [ffullname db_Filename src, swrite ['({})', src]];
+    endif endif
+
+	// Set dSet st display string.
+
+    if isnull dst then dst = "[]"; endif
+    if isscalarnum dst then if dst = db_Key dst then
+	dst = [ffullname db_Filename dst, swrite ['({})', dst]];
+    endif endif
+
+	// Print src & dst.
+
+    write ['{} [\n', fcnname];
+    write ['    src = {t:"\'},\n', src];
+    write ['    dst = {t:"\'}{}\n', dst, select [',','', notnull opt]];
+
+	// Print opt
+
+    if notnull opt then
+	write '    opt = [\n';
+	local t = untag opt;
+	t(3) = select ['', ',', m_last t(1)];
+	apt write ['\t{}: {v}{}\n', t(1), t(2), t(3)];
+	write '    ]\n';
+    endif
+
+    write '];\n';
+endfunction
+
+// pp_num returns a string that represent the given integer, x, with
+// 000's separated by spaces.
+
+local function pp_num x
+    x = swrite ['{.12g}', x];
+    if anyfalse isdigit x then return x; endif
+
+    local n = length x;
+    if n <= 3 then
+	return keep [cat ["       ", x], -7];
+    endif
+
+    local c = droplast reverse resizec [3, n];
+    x = splice [x, inc pscan c, 0, " "];
+    if length x < 7 then x = keep [cat ["       ", x], -7]; endif
+    return x;
+endfunction
+
+// write_progress prints the progress of the packing/unpacking process
+// to the CLI.  Called from db_ConfPack and db_ConfUnpack loops.
+
+local function write_progress [nmols, nconfs]
+    // const FMT = '... {.12g} molecule{}, {.12g} conformation{}.\n';
+    const FMT = '...  {} molecule{},  {} conformation{}\n';
+    local s1 = select ['s', '', nmols <> 1];
+    local s2 = select ['s', '', nconfs <> 1];
+    write [FMT, pp_num nmols, s1, pp_num nconfs, s2];
+endfunction
+
+// write_done prints the result statistics of the packing/unpacking process
+// to the CLI.  Called at the end of db_ConfPack and db_ConfUnpack.
+
+local function write_done [fcnname, nmols, nconfs]
+    const FMT = ' DONE:\n     {} molecule{}, {} conformation{}.\n';
+    local s1 = select ['s', '', nmols <> 1];
+    local s2 = select ['s', '', nconfs <> 1];
+    write [tok_cat [fcnname, FMT], pp_num nmols, s1, pp_num nconfs, s2];
+endfunction
+
+
+const OPT = [
+    conf:	'conf',	// the non-"mol:" portion of the conformation field
+    mol:	'mol',	// molecule field
+    mseq:	'mseq',	// mseq field (optional)
+    E:		'E',	// energy field folded into conf (optional)
+    nmols:	Inf,	// max. #mols to write
+    noerr:	0,	// don't exit on errors (just return the error value)
+    append:	0,	// append to the existing dst
+    esel:	0,	// read only DBV selected entries
+    verbose:	[],	// 0=no CLI, 1=print to CLI, []=call[] & !ctx
+    all:	0,	// copy all fields (and ignore opt.copy)
+    ctx:	0	// special context used in consecutive calls
+];
+
+const MOL_OR_CHAR = ['molecule', 'char', 'moe'];
+
+// Convert DB from one entry per conformation to one entry per molecule.
+// Note: If called as a procedure, the command is printed on the CLI.
+// Note: src == dst is OK.
+// Note: if dst is null we only test the output by writing to a temp.file
+//
+// Optional parameters:
+// opt.mol	... IN/OUT: molecule field (default='mol')
+// opt.mseq	... IN: molecule ID (default='mseq', disable='')
+// opt.E	... IN: conformational energy (default='E', disable='')
+// opt.esel	... read only dbv selected entries
+// opt.append	... append at the end of the dst datbase (ignored when src=dst)
+// opt.copy	... non-numerical fields treated same as in opt.copyone
+//		... numerical fields must contain one scalar per conf:
+//		... 1) write a vector of numbers if all scalars
+//		... 2) write a scalar number if all values the same
+//		... 3) leave empty if all values empty (null)
+//		... 4) do not output otherwise (delete the field from dst)
+// opt.all	... 1=copy all fields (ingore opt.copy) 0=use opt.copy
+// UNSUPPORTED/UNDOCUMENTED:
+// opt.conf	... OUT: non-"mol:" portion of the conf.field (default='conf')
+// opt.copyone	... read from the first conformation, copy as-is
+// opt._progress	... optional progress callback function
+//	[pfcn, ptime] = opt._progress
+//	start:	call [pfcn, [-1, FCNNAME]];
+//	loop:	call [pfcn, [percentage, nmols, nallconf]];
+//	stop:	call [pfcn, []]
+//	WARNING: if opt.nmols, the percentage will be wrong
+
+global function: db_ConfPack_edit [src, dst, opt]
+    const FCNNAME = 'db_ConfPack';
+
+    local ctx = 0;
+    if isscalarnum opt.ctx then ctx = dvar_keyopen opt.ctx; endif
+    local verbose = opt.verbose;
+    if not isscalarnum verbose then verbose = call[] and not ctx; endif
+
+    const chatDelay = 3.0;	// report to CLI every chatDelay secs
+    local chatTime;
+
+    if verbose then
+	write_command [FCNNAME, src, dst, opt];
+	chatTime  = clock[] + chatDelay;
+    endif
+
+    opt = tagcat [opt, OPT];			// append defaults
+    local skey = 0, dkey = 0, delName = [];
+
+	// On error, close any open db's and either return the error msg
+	// (opt.noerr=1) or exit with the error msg (opt.noerr=0).
+
+    function ERR msg
+	_fdelete delName;	// noop if delName=[]
+	db_Close skey;		// noop if skey=0 or invalid
+	db_Close dkey;		// noop if dkey=0 or invalid
+	dvar_close ctx;
+	if not opt.noerr then exit msg; else return msg; endif
+    endfunction
+
+	// Extract the src fhash (inode).
+
+    local srcHash = 0;
+    if isscalarnum src then
+	if db_Key src then srcHash = fhash db_Filename src; endif
+    elseif isscalartok src then
+	srcHash = fhash src;
+    endif
+    if not srcHash then
+	return ERR twrite ['Can\'t locate src={t:"\'}', src];
+    endif
+
+	// Extract the dst fhash (inode).  If dst does not exist,
+	// make dstHash non-0 and different from srcHash.
+
+    local dstHash = 0;
+    if isscalarnum dst then
+	if db_Key dst then dstHash = fhash db_Filename dst; endif
+    elseif isscalartok dst then
+	dstHash = fhash dst;
+	if eqL [ftype dst, ''] then dstHash = bitnot srcHash; endif
+    endif
+    if not dstHash then
+	return ERR twrite ['Can\'t locate dst={t:"\'}', dst];
+    endif
+
+	// Check whether src=dst.  (This is not 100% but close enough.)
+
+    if eqL [srcHash, dstHash] then
+	return ERR 'Source and destination point to the same file.';
+    endif
+
+	// Open src.  Check for errors.
+
+    if isscalarnum src then	skey = _db_Open src;
+    else			skey = _db_Open [src, 'read'];
+    endif
+    if not skey then
+	return ERR twrite ['Can\'t open src={t:"\'}', src];
+    endif
+
+	// Open dst.  Check for errors.
+	// If dst is created, set  delName!=[] and delete it on error.
+
+    local dstNew  = 0;		// if dstNew=1, delete dst on error
+
+    if isscalarnum dst then	dkey = _db_Open dst;
+    elseif ftype dst == '' then	dkey = _db_Open [dst, 'create']; delName = dst;
+    elseif not opt.append then	dkey = _db_Open [dst, 'create']; // rewrite
+    else			dkey = _db_Open [dst, 'read-write'];
+    endif
+    if not dkey then
+	return ERR twrite ['Can\'t open dst={t:"\'}', dst];
+    elseif eqL [skey, dkey] then	// safety
+	return ERR 'Source and destination point to the same file.';
+    endif
+
+	// Initialize counters.
+
+    local ent = 0;			// last entry read
+    local nmols = 0;			// #mols written
+    local nconfs = 0;			// #confs written
+    local nmolsMax = opt.nmols;		// max.#mols
+    if neL leE [0, nmolsMax, Inf] then nmolsMax = Inf; endif	// safety
+    local doNmols = nmolsMax < Inf;
+
+	// If context, get the state from the previous call.
+
+    if not ctx then
+    elseif not isscalarnum *ctx.ent then
+    elseif db_EntryKey [skey, *ctx.ent] then
+	ent = *ctx.ent;
+	nmols = *ctx.nmols;
+	nconfs = *ctx.nconfs;
+	if doNmols then nmolsMax = nmolsMax + nmols; endif
+    endif
+
+	// Validate/ensure the mol/mseq/conf/E fields.
+
+    opt.packed = -2;	// list only unpacked fields
+    opt.moeType = 1;	// allow moe fields
+    local molfield = first __db_Molfield [skey, opt];
+    if isnull molfield then
+	return ERR 'Missing molecule field';
+    endif
+
+    local [sfldName, sfldType] = db_Fields skey;
+    local moeType = eqL ['moe', sfldType(indexof [molfield, sfldName])];
+
+#if 0	// !!! now allowed
+    if moeType then // !!! in the future we'll allow 'moe' fields to be packed
+	return ERR 'Packing of \'moe\' fields is not supported';
+    endif
+#endif
+
+	// Set infields to opt.mol, opt.mseq, opt.E (if used & present)
+
+    local infields = [molfield];
+    local conffield = tok_cat [molfield, ':', opt.conf];
+
+    local use_mseq = not isspace token opt.mseq; // molecular ID (optional)
+    if use_mseq then
+	if m_diff [opt.mseq, sfldName] then
+	    use_mseq = 0;
+	else
+	    infields = append [infields, opt.mseq];
+	endif
+    endif
+
+    local use_E = not isspace token opt.E;	// energy: fold into conf
+    if use_E then
+	if m_diff [opt.E, sfldName] then
+	    use_E = 0;				// field not found
+	else
+	    infields = append [infields, opt.E]; // append to inp.fields
+	    use_E = length infields;		// index of the E field
+	endif
+    endif
+
+	// Validate/ensure other data fields to be copied.
+
+    local copyAll = opt.all;
+    if copyAll then opt.copy = sfldName; endif
+
+	// opt.copyone fields are "onefields".
+	// "onefields" will be as-is copied from the first conformation.
+	// 'molecule' and 'char' fields are always "onefields"
+
+	// !!! Not yet implemented: If the values stored with subsequent
+	// conformations are not identical to the value stored with the
+	// first conformation, a warning message should be  printed.
+	// Only one warning message per field should be printed.
+
+    local onefields = diff [join [opt.copyone, sfldName], infields];
+
+	// Numeric opt.copy fields are "vecfields", non-numeric opt.copy
+	// fields are "onefields".
+
+	// "vecfields" must be scalar numerical fields (or all empty).
+	// If all values are scalars, we write a vector of numbers.
+	// If all values are equal, we emit only one value (unit extension).
+	// If all values are null, we emit nothing (i.e. leave the cell empty)
+	// Otherwise, we delete the output field.
+
+	// !!! Not yet implemented: If a vector value is found in a numerical
+	// field, instead of the field being deleted, the field should become
+	// "onefield" (and all previously written values should corrected).
+
+    local vecfields = diff [opt.copy, cat [infields,onefields]];
+    local k = indexof [vecfields, sfldName];
+    vecfields = vecfields | k;
+    local vectypes = sfldType[pack k];
+
+	// 'molecule', 'moe', 'char' fields will copy only the value
+	// from the first conformer of the molecule.
+
+    local m = m_join [vectypes, ['molecule','moe','char']];
+    onefields = cat [onefields, vecfields | m];	// add to onefields
+    vecfields = vecfields | not m;		// rm from vecfields
+    vectypes = vectypes | not m;
+
+	// Append vecfields to infields.  These will be read from every
+	// conformer.  (onefields are read only from the first conformer.)
+
+    local nvecfields = length vecfields;	// #of appended vecfields
+    infields = cat [infields, vecfields];	// mol.fields+vecfields
+
+	// Create the destination for opt.copy & opt.copyone fields.
+
+    local onetypes = sfldType[indexof [onefields, sfldName]];
+
+	// If opt.noerr, catch any errors caused by db_*Ensure*.
+
+    local tval, tcode;
+    if opt.noerr then
+	[tval, tcode] = task_wfork [errmsg:'ignore', master:'parent'];
+	if neL [tcode, 'child'] then
+	    if tcode == 'error' then	return ERR tval;
+	    elseif tcode == 'kill' then	return ERR 'Canceled';
+	    else			return [];
+	    endif
+	endif
+    endif
+
+    db_EnsureField [dkey, molfield, select ['moe', 'molecule', moeType]];
+    db_ConfFieldEnsure [dkey, conffield, use_E];
+    apt db_EnsureField [dkey, vecfields, vectypes];
+    apt db_EnsureField [dkey, onefields, onetypes];
+
+    if opt.noerr then
+	task_return [];
+    endif
+
+	// Copy the environment
+	// !!! use db_SetFieldEnv instead
+
+    local [env_name, env_val] = untag db_Environment skey;
+    local m_global = not m_findmatch ['[^{]*', env_name];
+    local pat = tok_cat ['{', cat [molfield, vecfields, onefields], '}*'];
+    local m_field = m_findmatch [pat, env_name];
+    [env_name, env_val] = [env_name, env_val] || [m_global or m_field];
+    apt db_SetEnv [dkey, env_name, env_val];
+
+	// Initialize values for the main DB loop.
+	// If *ctx.ent, continue reading from the last entry read
+	// in the previous call.
+
+    local nconfsMax = db_nEntries skey;
+    ent = db_NextEntry [skey, ent];
+
+	// If opt.esel, advance to the first selected entry.
+
+    local esel = anytrue opt.esel;
+    if esel then
+	nconfsMax = max [1, dbv_nSelectedEntries skey];
+	while ent while not dbv_EntrySelected [skey, ent] loop
+	    ent = db_NextEntry [skey, ent];
+	endloop
+    endif
+
+	// Read molfields++vecfields from the first conformer.
+
+    local invals = db_ReadFields [skey, ent, infields];
+    local E = [];
+    local tm = clock[];
+    local vecvals = [];
+
+	// Start the progress indicator (if any).
+
+    local [pfcn, ptime] = opt._progress;
+    local do_progress = anytrue pfcn;
+    if do_progress then
+	if isnull ptime then ptime = CHAT_DELAY; endif
+	call [pfcn, [-1, FCNNAME]];
+    endif
+
+    local pKey = 0, pInfo = [];
+    if anytrue opt.progress then
+	pInfo	= [
+	    nmols:	nmols,		// #mols read & copied
+	    nmolsMax:	nmolsMax,	// possibly Inf
+	    nconfs:	nconfs,		// #confs read & packed
+	    nconfsMax:	nconfsMax	// #confs still in the file
+	];
+	pKey	= __ProgressOpen [opt.progress, pInfo];
+	__ProgressGotBeat pKey;		// ensure 1st call now if delay=0
+    endif
+
+	// One by one, copy each molecule from src to dst.
+
+    const MOL_ATOM_XYZ = [MOL_ATOM_X, MOL_ATOM_Y, MOL_ATOM_Z];
+
+    while ent loop
+	if doNmols then if nmols >= nmolsMax then break; endif endif
+
+	    // Extract the mol & mseq from the first conformer of the
+	    // next molecule (read in the previous iteration.)
+	    // Additionally, read the onefields from the first conformer.
+
+	nmols = inc nmols;
+	local mol1, moe1;
+	if moeType then
+	    moe1 = invals(1);		// keep for rewriting to database
+	    mol1 = moe2mol moe1;	// convert to mol for conf pos handling
+	else
+	    mol1 = invals(1);
+	endif
+	local mseq1 = invals(2);
+	local onevals = db_ReadFields [skey, ent, onefields];
+
+	    // Store the atom positions of the first conf. in pos(1).
+	    // Get vecvals from invals=molvals++vecvals.
+
+	local pos = [mol1(4)[MOL_ATOM_XYZ]];
+	if use_E then E = [invals(use_E)]; endif
+	if nvecfields then vecvals = [keep [invals, -nvecfields]]; endif
+
+	    // Read all entries (the remaining conformers) of the one molecule.
+	    // and collect their positions, pos[2..], and field values.
+	    // (The first conformer of the next molecule will be read as well.)
+
+	local i = 1;
+	while ent = db_NextEntry [skey, ent] loop
+	    if esel then
+		if not dbv_EntrySelected [skey, ent] then continue; endif
+	    endif
+	    invals = db_ReadFields [skey, ent, infields];
+	    local mol_i;
+	    if moeType then
+		mol_i = moe2mol invals(1);  // convert to mol for pos extract
+	    else
+		mol_i = invals(1);
+	    endif
+
+		// Detect when the read entry stores a new molecule.
+
+	    local new_mol = not __mol_SameDbMolecule [mol_i, mol1];
+	    if not use_mseq then
+		if new_mol then break; endif
+
+	    elseif neL [mseq1, invals(2)] then
+		break;
+
+		// If mseq is used and did not change, then new_mol
+		// is expected to be 0, unless the entry is corrupted.
+
+	    //elseif new_mol then
+		//if ctx then *ctx.ent = ent; endif
+		//return ERR twrite [
+		//    'Entry {} (row {}), mseq {v}, conformation {}: '
+		//    'Unexpected molecule',
+		//    ent, indexof [ent, db_Entries skey], mseq1, i+1
+		//];
+	    endif
+
+		// Record the atom positions, pos(i), and field values,
+		// vecvals(i), of conformer i.
+
+	    i = i + 1;
+	    pos(i) = mol_i(4)[MOL_ATOM_XYZ];
+	    if use_E then E(i) = invals(use_E); endif
+	    if nvecfields then vecvals(i) = keep [invals, -nvecfields]; endif
+	endloop
+
+	    // Pack and verify vector fields.
+
+	local vecfields_nonempty = vecfields;
+
+	if nvecfields then
+
+		// Find fields that are all scalar or all empty.
+		//  m_scalar(j)	... 1 iff all values of field j are scalars
+		//  m_nempty(j)	... #empty values of field j
+
+	    local m_scalar = m_id vecfields;	// all confs scalars
+	    local m_nempty = m_null vecfields;	// # empty confs
+
+		// For each conformer, i, update m_scalar and m_nempty.
+		//  vecvals(i)	... values of all fields for conformer i
+
+	    for i = 1, length vecvals loop
+		if isflatnum vecvals(i) then continue; endif
+		local vlen = app length vecvals(i);	// #vals per field
+		m_scalar = m_scalar and (vlen == 1);	// mask scalar vals
+		m_nempty = m_nempty + not vlen;		// count #empty vals
+		// m_OK = m_OK and app isscalar vecvals(i);
+		// m_empty = m_empty + not app length vecvals;
+	    endloop
+
+#if 0
+	    // !!! allow packing of fields that are not all scalar or all empty:
+	    // ... for each vecfield(j), 'xx', create segement field, 'xx.seg'
+	    local seg = [];
+	    for i = 1, length vecvals loop
+		seg(i) = app length vecvals(i);
+	    endloop
+	    seg = tr seg;
+	    if neL [length seg, nvecfields] then E_BUG[]; endif
+	    for j = 1, nvecfields loop
+		if allfalse seg(j) then		seg(j) = [];	// all empty
+		elseif neL seg(j) then				// different
+		elseif eqL [seg(j), 1] then	seg(j) = [];	// all scalar
+		else				seg(j) = seg(1);// all same
+		endif
+	    endloop
+	    // ... write seg(j) to 'xx.seg', (= tok_cat [vecfield(j),'.seg'])
+	    vecSegNeeded = vecSegNeeded and app length seg;
+	    // ... at the end, delete all '*.seg' fields that are _not_ needed
+#endif
+
+		// Remove (don't copy) illegal vector fields
+		// (not all scalars and no all empty).
+		// !!! use ".seg" fields to pack other types of fields
+
+	    if anyfalse m_scalar then
+		local m_empty = m_nempty == length vecvals;
+		local m_OK = m_scalar or m_empty;
+
+		    // Remove non-scalar, non-empty fields.
+		    // !!! should try here more ideas before giving up
+
+		if anyfalse m_OK then
+		    local badName = vecfields | not m_OK;
+		    apt db_DeleteField [dkey, badName];
+		    if ctx then
+			*ctx.badName = append [*ctx.badName, badName];
+		    elseif verbose then
+			const RFMT = 'Removing non-scalar field(s) {"\'|,}.\n';
+			write [RFMT, badName];
+		    endif
+
+		    vecvals = vecvals || [m_OK];
+		    vecfields_nonempty = vecfields = vecfields | m_OK;
+		    m_empty = m_empty | m_OK;
+
+		    infields = cat [drop [infields, -nvecfields], vecfields];
+		    invals = cat [
+			drop [invals, -nvecfields],
+			keep [invals, -nvecfields] | m_OK
+		    ];
+		    nvecfields = length vecfields;
+		endif
+
+		    // Drop the empty fields from the output for this molecule.
+
+		if anytrue m_empty then
+		    vecfields_nonempty = vecfields | not m_empty;
+		    vecvals = vecvals || [not m_empty];
+		endif
+	    endif
+
+		// Transpose the shape of vecvals
+		// from n_conf*n_scalarfields to n_scalarfields*n_conf.
+
+	    vecvals = tr vecvals;
+
+		// Replace vectors with unit-extending scalars.
+
+	    m = app eqL vecvals;
+	    vecvals | m = app first (vecvals | m);
+	endif
+
+	nconfs = add [nconfs, length pos];
+
+	    // Encode positions and energies.
+	    // Copy all molecule data to one entry of the output.
+
+	pos = mol_EncodePos [mol1, pos, E];
+
+	    // Write packed 'moe' field.
+
+	if moeType then
+	    db_Write [dkey, 0, tag [
+		cat [molfield, conffield, vecfields_nonempty, onefields],
+		cat [[moe1], [pos], vecvals, onevals]
+	    ]];
+
+	    // Write packed 'molecule' field.
+	else
+	    db_Write [dkey, 0, tag [
+		cat [molfield, conffield, vecfields_nonempty, onefields],
+		cat [[mol1], [pos], vecvals, onevals]
+	    ]];
+	endif
+
+	    // Report progress, if requested.
+
+	if verbose then if clock[] > chatTime then
+	    chatTime = clock[] + chatDelay;
+	    write_progress [nmols, nconfs];
+	endif endif
+
+	    // Report progress, if requested.
+	    // Note: If opt.nmols is not used, use nconfs/nconfMax because
+	    // nmolsMax=Inf.  Otherwise, we don't know whether nconfs will
+	    // reach nconfMax first or nmols will reach nmolsMax first.
+
+	if pKey then if __ProgressGotBeat pKey then
+	    local P = max [nconfs/nconfsMax, nmols/nmolsMax];
+	    pInfo.nmols	 = nmols;
+	    pInfo.nconfs = nconfs;
+	    __ProgressDoCall [pKey, P, pInfo];
+	endif endif
+
+	    // Obsolete way of progress reporting. (this will be removed)
+
+	if do_progress then if clock[] - tm > ptime then
+	    tm = clock[];
+	    local p = max [nconfs/nconfsMax, nmols/nmolsMax];
+	    call [pfcn, [p, nmols, nconfs]];
+	endif endif
+    endloop
+
+	// If context, record the current state, to be picked up with
+	// the next call.  (If ent=0, there shouldn't be a next call.)
+
+    if ctx then
+	*ctx.ent	= ent;
+	*ctx.nmols	= nmols;
+	*ctx.nconfs	= nconfs;
+	*ctx.done	= not ent;
+	dvar_close ctx;
+	if not ent then ctx = 0; endif	// ctx=0: this is the last call
+    endif
+
+	// Close the databases.
+
+    db_Close dkey;
+    db_Close skey;
+
+	// Report the final progress and free the progress context.
+
+    if pKey then
+	pInfo.nmols  = nmols;
+	pInfo.nconfs = nconfs;
+	__ProgressDone [pKey, pInfo];
+	__ProgressClose pKey;
+    endif
+
+	// Stop the progress indicator (if any) and report the counts.
+	// Note: If ctx, don't: there should be another call coming.
+
+    if not ctx then
+	if do_progress then call [pfcn, []]; endif
+	if verbose then write_done [FCNNAME, nmols, nconfs]; endif
+    endif
+endfunction
+
+// Convert DB from one entry per molecule to one entry per conformation.
+// Note: If called as a procedure, the command is printed on the CLI.
+// Note: src == dst is OK.
+// Note: if dst is null we only test the output by writing to a temp.file
+//
+// Optional parameters:
+// opt.mol	... IN/OUT: molecule field (default='mol')
+// opt.mseq	... OUT: molecule ID (default='mseq', disable='')
+// opt.E	... OUT: conformational energy (default='E', disable='')
+// opt.esel	... read only dbv selected entries
+// opt.append	... append at the end of the dst datbase (ignored when src=dst)
+// opt.copy	... non-numerical fields treated same as in opt.copyone
+//		... numerical fields will output one scalar per conf:
+//		... 1) if a vector of nconf scalars, write 1 scalar/conf
+//		... 2) if a scalar, replicate (uext) to each conf
+//		... 3) if empty, leave empty in each conf
+//		... 4) do not output otherwise (delete the field from dst)
+// UNSUPPORTED/UNDOCUMENTED:
+// opt.copyone	... read one per mol, duplicate as-is for each conf
+// opt.conf	... IN: non-"mol:" portion of the conf.field (default='conf')
+// opt.progress	... progress callback function
+//	[pfcn, ptime] = opt.progress
+//	start:	call [pfcn, [-1, FCNNAME]];
+//	loop:	call [pfcn, [percentage, nmol, nallconf]];
+//	stop:	call [pfcn, []]
+
+global function: db_ConfUnpack [src, dst, opt]
+    const FCNNAME = 'db_ConfUnpack';
+    if call[] then write_command [FCNNAME, src, dst, opt]; endif
+
+    local [fldname, fldtype] = db_Fields src;
+    local moeType = 0;
+
+	// If opt.mol is not specified determine the default.
+	// If no field 'mol' (default) is present check for 'moe'.
+
+    if isnull opt.mol then
+	local x_mol = indexof ['mol', fldname];
+	local x_moe = indexof ['moe', fldname];
+	if not x_moe and x_moe then
+	    if fldtype(x_moe) == 'moe' then
+		opt.mol = 'moe'; // try to unpack field 'moe' instead of 'mol'
+	    endif
+	endif
+    endif
+
+    opt = tagcat [opt, OPT];			// append defaults
+    local do_create = allfalse opt.append or ftype dst == '';
+
+	// Open the database.  Check for src=dst.
+
+    src = db_Open [src, 'read'];
+    if eqL db_Filename [src, dst] then
+	exit 'Source and destination point to the same file.';
+    endif
+    dst = db_Open [dst, select ['create', 'read-write', do_create]];
+
+	// Validate/ensure the mol/mseq/conf/E fields.
+
+    local molfield = opt.mol;
+
+	// Check if a 'moe' or 'molecule' field type will be unpacked.
+
+    x_mol = indexof [molfield, fldname];
+    if x_mol then
+	if fldtype(x_mol) == 'moe' then
+	    moeType = 1;
+	endif
+    endif
+
+    db_RequireField [src, molfield, select ['moe', 'molecule', moeType]];
+    db_EnsureField  [dst, molfield, select ['moe', 'molecule', moeType]];
+
+    local conffield = tok_cat [molfield, ':', opt.conf];
+    db_RequireField [src, conffield, 'byte'];
+
+    local editor = db_GetFieldEnv [src, conffield, 'editor'];
+    if neL [editor, 'molconf_EditCell'] then if call[] then
+	write ['WARNING: field {} ', conffield];
+	if allfalse editor then
+	    write 'does not specify an editor auto-command.\n';
+	else
+	    write 'specifies an unexpected editor auto-command.\n';
+	endif
+    endif endif
+
+    local infields = [molfield, conffield];
+
+    local mseqfield = opt.mseq;
+    local use_mseq = not isspace token mseqfield; // molecular ID (optional)
+    if use_mseq then
+	db_EnsureField [dst, mseqfield, 'int'];
+    else
+	mseqfield = [];
+    endif
+
+	// Detect whether to generate the energy field.
+	// If the en.field is specified, but the conf.field
+	// does not store energy, we don't generate the en.field.
+
+    local efield = opt.E;
+    local use_E = not isspace token efield;	// energy: folded in conf
+
+    if use_E then
+	use_E = db_ConfFieldUseE [src, conffield];
+    endif
+
+    if use_E then
+	db_EnsureField [dst, efield, 'float'];
+    else
+	efield = [];
+    endif
+
+	// Validate/ensure other data fields to be copied.
+
+	// opt.copyone fields are "onefields".
+	// "onefields" will be as-is copied to each conformation.
+	// 'molecule' and 'char' fields are always "onefields"
+
+    local onefields = opt.copyone;	// copied values
+    onefields = onefields | app length db_FieldType [src, onefields];
+    onefields = diff [onefields, infields];
+
+	// Numeric opt.copy fields are "vecfields", non-numeric opt.copy
+	// fields are "onefields".
+
+	// "vecfields" must be scalar numerical fields (or all empty).
+	// If all values are scalars, we write a vector of numbers.
+	// If all values are equal, we emit only one value (unit extension).
+	// If all values are null, we emit nothing (i.e. leave the cell empty)
+	// Otherwise, we delete the output field.
+
+    local vecfields = opt.copy;		// copy values and detect what to do
+    vecfields = vecfields | app length db_FieldType [src, vecfields];
+    vecfields = diff [vecfields, cat [infields, onefields]];
+    local vectypes = db_FieldType [src, vecfields];
+
+    local m = m_join [vectypes, MOL_OR_CHAR];
+    onefields = cat [onefields, vecfields | m];
+    vecfields = vecfields | not m;
+    vectypes = vectypes | not m;
+
+    local nvecfields = length vecfields;
+    infields = cat [infields, vecfields, onefields];
+    local inseg = [1, 1, nvecfields, length onefields];	// [mol,conf,one,vec]
+
+	// Create the destination for opt.copy & opt.copyone fields.
+
+    apt db_EnsureField [dst, vecfields, vectypes];
+    apt db_EnsureField [dst, onefields, db_FieldType [src, onefields]];
+
+	// Copy the environment
+	// !!! use db_SetFieldEnv instead
+
+    local [env_name, env_val] = untag db_Environment src;
+    local m_global = not m_findmatch ['[^{]*', env_name];
+    local pat = tok_cat ['{', cat [molfield, vecfields, onefields], '}*'];
+    local m_field = m_findmatch [pat, env_name];
+    [env_name, env_val] = [env_name, env_val] || [m_global or m_field];
+    apt db_SetEnv [dst, env_name, env_val];
+
+	// Initialize values for the main DB loop.
+
+    local outfields = cat [molfield, mseqfield, efield, onefields, vecfields];
+
+    local tot_nent = db_nEntries src;
+    local ent = 0;
+    local tm = clock[];
+    local esel = anytrue opt.esel;
+    if esel then tot_nent = max [1, dbv_nSelectedEntries src]; endif
+
+	// Start the progress indicator (if any).
+
+    local [pfcn, ptime] = opt.progress;
+    local do_progress = anytrue pfcn;
+    if do_progress then
+	if isnull ptime then ptime = CHAT_DELAY; endif
+	call [pfcn, [-1, FCNNAME]];
+    endif
+
+	// One by one, copy each molecule from src to dst.
+
+    local nmol = 0, nallconf = 0;
+
+    while ent = db_NextEntry [src, ent] loop
+	if esel then
+	    if not dbv_EntrySelected [src, ent] then continue; endif
+	endif
+	nmol = nmol + 1;
+
+	const MOL_ATOM_XYZ = [MOL_ATOM_X, MOL_ATOM_Y, MOL_ATOM_Z];
+
+	    // Read all molecule data from one entry of the input.
+	    // Decode positions and energies.
+
+	local invals = db_ReadFields [src, ent, infields];
+	local [[mol], [buf], vecvals, onevals] = split [invals, inseg];
+
+	if moeType then
+	    local moe = mol;	// retain for writing of unpacked rows
+	    mol = moe2mol moe;	// convert to mol for pos decoding
+	endif
+
+	    // !!! If mol and buf disagrees in the number of atoms, try
+	    // to fix it by stripping hydrogens from mol.  If that does
+	    // not work, give up and ignore mol.
+
+	local info = mol_DecodeInfo [mol, buf];
+	if anytrue info.addH then
+	    mol = mol_aMask [mol, not info.addH];
+	endif
+
+	local natoms = mol_aCount mol;
+	local [pos, E] = mol_DecodePos [mol, buf];
+	if length uniq append [app l_length pos, natoms] <> 1 then
+	    pos = E = [];
+	endif
+
+	local i, nconf = length pos;
+	nallconf = add [nallconf, nconf];
+
+	    // Unpack and verify vector fields.
+
+	local o_vecfields, o_vecvals;
+	if nvecfields then
+	    local veclen = app length vecvals;
+	    local m_OK = veclen == nconf or veclen <= 1; // uext OK or empty
+
+		// Remove illegal vector fields.
+
+	    if anyfalse m_OK then
+		apt db_DeleteField [dst, vecfields | not m_OK];
+
+		if call[] then
+		    write [
+			'Removing non-scalar field(s) {"\'|,}.\n',
+			vecfields | not m_OK
+		    ];
+		endif
+
+		veclen = veclen | m_OK;
+		vecfields = vecfields | m_OK;
+		nvecfields = length vecfields;
+
+		infields = split [infields, inseg];
+		infields(3) = vecfields;
+		inseg = app length infields;
+		infields = cat infields;
+	    endif
+
+		// Drop empty fields.
+
+	    o_vecfields = vecfields | veclen;
+	    o_vecvals = vecvals | veclen;
+
+		// Transpose the shape of vecvals
+		// from (n_scalarfields*n_conf) to (n_conf*n_scalarfields).
+
+	    o_vecvals = tr o_vecvals;
+	    o_vecvals = resize [o_vecvals, nconf];	// if all values scalar
+	endif
+
+	    // Write all entries of the current molecule.
+
+	// local r = tag [outfields, [[]]];
+	local r = [];
+	if use_mseq then r.(mseqfield) = nmol; endif
+	if length onefields then r = tagput [r, onefields, onevals]; endif
+
+	for i=1, nconf loop
+	    if moeType then
+		moe = moepos2moe [moe, pos(i)];	// set atm pos in moe-vector
+		r.(molfield) = moe;
+	    else
+		mol(4) = put [mol(4), MOL_ATOM_XYZ, pos(i)];
+		r.(molfield) = mol;
+	    endif
+	    if use_E then r.(efield) = E(i); endif
+	    if nvecfields then r = tagput [r, o_vecfields, o_vecvals(i)]; endif
+	    db_Write [dst, 0, r];
+	endloop
+
+	    // Report progress, if requested.
+
+	if do_progress then if clock[] - tm > ptime then
+	    tm = clock[];
+	    call [pfcn, [nmol/tot_nent, nmol, nallconf]];
+	endif endif
+    endloop
+
+	// Close the databases.
+
+    db_Close src;
+    db_Close dst;
+
+	// Stop the progress indicator (if any) and report the counts.
+
+    if do_progress then call [pfcn, []]; endif
+    if call[] then write_done [FCNNAME, nmol, nallconf]; endif
+endfunction
+

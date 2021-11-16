@@ -1,0 +1,175 @@
+function pro_Align;
+function pro_ReadMDA;
+function _pro_Align_Residues;
+global function pairwise_alignment []
+
+//Commentary 7/14/21 GLS
+//To use this script, save and load this file (SVL menu) and then load a
+//.moe file containing the sequences you want aligned on a pairwise basis.
+//Once the sequences are loaded, use the command pairwise_alignment [] to
+//calculate sequence similarities. A similarity matrix will be written to
+//sequence_similarity_report.txt.
+
+///LOCAL FUNCTIONS FROM PROALNSUP_UI.SVL (NOT MY CODE) ////////
+//Comments are also from the source code.
+
+// Helper function to get aligned residue letter matrix from residue keys.
+// It returns the one-letter alignment and mask of gaps and unknown
+// residues (X).
+local function get_letter_matrix res
+    local pos	= app x_pack res;
+    local maxrp	= maxR pos;
+    local sym	= apt put [[rep [".", maxrp]], pos, rLetter2 app pack res];
+    local R = sym <> ".";
+    local X = sym <> "X" and R;
+    local mask = not andE not R;
+    sym = sym || [mask];		// pack alignment (subunit offset gaps)
+    R = R   || [mask];
+    X = X   || [mask];
+    return [sym, R, X];
+endfunction
+
+// Return identity matrix for residues from atoms.
+local function get_identity_matrix [residues, opt]
+    local [seq, res, X] = get_letter_matrix residues;
+
+    local i, idx = x_id res, S = matid length res;
+    for i = 1, length seq loop
+	S(i) = put [S(i), idx, app add ((seq[i] == seq[idx]) and X[i])];
+	idx = dropfirst idx;
+    endloop
+
+    S = 100 * (S + tr S) * invz app add res;
+    S = apt poke [S, x_id S, 100];
+
+    return tr S;
+endfunction
+
+// Return similarity matrix for residues. This is here used for the
+// alignment check only!
+local function get_similarity_matrix [residues, opt]
+    local [seq, res, X] = get_letter_matrix residues;
+
+    local [mat,sym] = pro_ReadMDA [opt.mda,opt.mda2]; //!!! for align check only
+
+    seq = apt indexof [seq, [sym]];
+    seq = apt mput [seq, not seq, indexof ["X", sym]];
+
+    local i, V, x = tr seq;
+    for i = 1, length seq loop;
+	V(i) = add (0 < apt get [mat[seq(i)], x] and X(i));
+    endloop;
+
+    return tr (100 * V * invz app add res);
+endfunction
+
+////////END LOCAL FUNCTIONS/////////////////
+///////START GS CODE////////////////////////
+////////////////////////////////////////////
+
+local chains = Chains[];
+local chain;
+local diff_chain;
+local similarities = [];
+local table_mat = [];
+local i;
+local prev_cnum = 0;
+
+//MATRIX GENERATION
+//create a "fluff" matrix containing the same number of rows/cols as there are chains
+for i = 1, length chains, 1 loop
+	table_mat = cat [table_mat, [igen length chains]];
+endloop
+
+//CHAIN ALIGNMENT
+//for each chain loaded into the system, compare it to itself and every other chain
+//in the system on a pairwise basis.
+for chain in chains loop
+	for diff_chain in chains loop //using default pro_Align settings
+		pro_Align [
+			[chain, diff_chain],
+			[
+				mda: 'blosum62',
+				gapstart: 10.0,
+				gapextend: 2.0,
+				method: 'tree-based',
+				round_robin: 0,
+				shuffle: 0,
+				max_iterations: 100,
+				failure_count: 10,
+				enable_structural: 0, //sequence only alignment
+				gapstart_structural: 1.0,
+				gapextend_structural: 0.1,
+				realign_only: 0,
+				multi_chain: 0,
+				retain_frozen_gaps: 0,
+				restrict: 'All Residues',
+				chain_blocks: [],
+				split_by_subunit: 1,
+				superpose: 0,
+				optimize_gap_penalties:0,
+				print_table: 0]
+			];
+	local compared_chains = cat [chain, diff_chain];
+	local chain_number = first cNumber compared_chains;
+	//print cNumber compared_chains; DEBUG
+	local res = _pro_Align_Residues [compared_chains];
+	local mat = get_identity_matrix [res];
+	local chain_numbers = cNumber compared_chains;
+	local C1 = first chain_numbers;
+	local C2 = second chain_numbers;
+	local sim = last first mat;
+	local rev_sim = first last mat;
+	//since the output returned into the mat variable is odd, need to make sure that
+	//we don't overwrite a value in a row or column that has already been written.
+	//
+	//i.e. table writes row 1 and column 1 starting at [1,1], row 2 and column 2
+	//starting at [2,2], etc.
+	if C1 > prev_cnum and C2 > prev_cnum then
+		table_mat(C1) = poke [table_mat(C1), C2, sim];
+		chain_numbers = reverse chain_numbers;
+		C1 = first chain_numbers;
+		C2 = second chain_numbers;
+		table_mat(C1) = poke [table_mat(C1), C2, rev_sim];
+	endif
+
+	//print mat; DEBUG
+	endloop
+write ['Comparing chain {} to all other chains...\n', chain_number];
+
+//update previous chain number for comparison in the next loop
+prev_cnum = inc prev_cnum;
+endloop
+
+//write table to svl commands window and save as .txt file
+logfile ['sequence_similarity_report.txt'];
+local chain_num;
+write ['\t\t'];
+for chain_num = 1, length chains, 1 loop
+	write ['{}\t', chain_num];
+endloop
+
+write '\n';
+
+local row;
+local counter = 0;
+local row_counter = 1;
+write ['{}:{}|', row_counter, tok_keep [cName chains(row_counter), 6]];
+for row in table_mat loop
+	for sim in row loop
+		write ['\t{f.1}', sim];
+	endloop
+	row_counter = inc row_counter;
+	if row_counter <= length chains then
+		write ['\n{}:{}|', row_counter, tok_keep [cName chains(row_counter), 6]];
+	else
+		write ['\n'];
+	endif
+endloop
+
+logfile[];
+
+ted_Open 'sequence_similarity_report.txt';
+endfunction
+			
+			

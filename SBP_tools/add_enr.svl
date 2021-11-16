@@ -1,0 +1,48 @@
+#svl
+
+//this script creates a new database (output_mdb), takes enrichments from input database (input_mdb) and makes 5 entries with each enrichment. the script then
+//takes the fragments from each corresponding enrichment value and writes each fragment to each of the 5 enrichment entries that correspond
+
+global function add_enr [input_mdb, output_mdb]
+
+local entry;
+local mdb_key = db_Open [input_mdb, 'read-write'];
+local mdb_key2 = db_Open [output_mdb, 'create'];
+db_CreateField [mdb_key2, 'Enrichment', 'float'];
+db_CreateField [mdb_key2, 'fragment', 'molecule'];
+local input_entries = db_Entries [input_mdb];
+local i;
+	for entry in input_entries loop
+		local enr = db_ReadFields [input_mdb, entry, 'Enrichment'];
+		db_Write [output_mdb, 0, [Enrichment: enr]];
+		db_Write [output_mdb, 0, [Enrichment: enr]];
+		db_Write [output_mdb, 0, [Enrichment: enr]];
+		db_Write [output_mdb, 0, [Enrichment: enr]];
+		db_Write [output_mdb, 0, [Enrichment: enr]];
+	endloop
+
+local output_entries = db_Entries [output_mdb];
+local ent2;
+local frags = [];
+	for entry in input_entries loop
+			frags = append [frags, db_ReadFields [input_mdb, entry, 'Fragment1_mol']];
+			frags = append [frags, db_ReadFields [input_mdb, entry, 'Fragment2_mol']];
+			frags = append [frags, db_ReadFields [input_mdb, entry, 'Fragment3_mol']];
+			frags = append [frags, db_ReadFields [input_mdb, entry, 'Fragment4_mol']];
+			frags = append [frags, db_ReadFields [input_mdb, entry, 'Fragment5_mol']];
+	endloop
+
+local frag;
+print length frags;
+print frags;
+i = 1;
+	for frag in frags loop
+			local [f] = frag;
+			print f;
+			print f;
+			db_Write [output_mdb, output_entries(i), [fragment: f]];
+			i=i+1;
+	endloop
+		
+
+endfunction

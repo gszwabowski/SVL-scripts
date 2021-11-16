@@ -1,0 +1,92 @@
+function prolig_Calculate;
+global function s_score_calc_refined [receptor, mdb];
+local frag1_chain, frag2_chain, frag3_chain, frag4_chain, frag5_chain;
+local frag1_name, frag2_name, frag3_name, frag4_name, frag5_name;
+
+Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+
+Open receptor;
+
+local entries = db_Entries mdb;
+//entries = dropfirst entries;
+local entry;
+db_EnsureField [ mdb, 's_score_strong', 'float'];
+
+for entry in entries loop
+	local [frag1] = db_ReadFields [mdb, entry, 'Fragment1_mol'];
+	local [frag2] = db_ReadFields [mdb, entry, 'Fragment2_mol'];
+	local [frag3] = db_ReadFields [mdb, entry, 'Fragment3_mol'];
+	local [frag4] = db_ReadFields [mdb, entry, 'Fragment4_mol'];
+	local [frag5] = db_ReadFields [mdb, entry, 'Fragment5_mol'];
+	
+	[frag1_chain, frag1_name] =db_CreateMolecule frag1;
+	[frag2_chain, frag2_name] =db_CreateMolecule frag2;
+	[frag3_chain, frag3_name] =db_CreateMolecule frag3;
+	[frag4_chain, frag4_name] =db_CreateMolecule frag4;
+	[frag5_chain, frag5_name] =db_CreateMolecule frag5;
+	
+	local chains = Chains[];
+	local [rec_atoms] = cAtoms chains(1); // get receptor atoms
+	local frags = dropfirst chains; // create subset of just fragments
+	local frag_chain;
+	local ligkeys = cat cAtoms frags;
+	local dummy_mask = aElement ligkeys <> 'LP';
+	ligkeys = ligkeys | dummy_mask;
+	//aSetSelected [ligkeys, 1];
+	local use_frags = [];
+	local sel_atoms = []; // empty vector for fragment atoms that are to be selected
+		
+	local itypes = ['Hbond', 'Metal', 'Ionic', 'Covalent', 'Arene', 'Distance'];
+		local iopt = [
+			emin_hb:	    minE[-0.1, 0.10],
+			emin_hpi:	    minE[-0.1, 0.10],
+			emin_ion:	    0.10,
+			distance_threshold: 4.5, //4.5 default
+			layoutrechb:	    1	// incl. rec-rec hbond in layout
+			];
+	
+	//from prolig2d.svl, calculates fragments with strong interactions
+	local iract = prolig_Calculate [itypes, ligkeys, rec_atoms, iopt];
+	//aSetSelected [ligkeys, 1];
+	local [iract_2, iract_3] = [iract(2), iract(3)];
+	local lrmask = indexof [iract_2, ligkeys] and indexof [iract_3, rec_atoms];
+	local rlmask = indexof [iract_3, ligkeys] and indexof [iract_2, rec_atoms];
+	local mask = andE [indexof [iract(1), ['Hbond', 'Metal', 'Ionic', 'Covalent']],lrmask or rlmask];
+	//local arene_mask = andE [iract(1) == 'Arene', lrmask or rlmask];
+	//mask = mask or arene_mask;
+	local s_lim = select [iract(2), iract(3), lrmask] | mask;	// multi atom
+	local s_rim = select [iract(3), iract(2), lrmask] | mask;	// for arene
+	local s_score = iract(4) | mask;
+	print s_score;
+	
+	local s_lim_atoms = cat rAtoms oParent s_lim; // atoms with strong interactions
+	local weak_fragatoms = diff [ligkeys, s_lim_atoms];
+	//local sel_atom = diff [s_frag_atoms, ligkeys]; //vector of atoms with strong ints.
+	if notnull weak_fragatoms then
+		ligkeys = cat rAtoms oParent s_lim_atoms;
+		oDestroy oParent oParent weak_fragatoms;
+	endif
+	//sleep 50;
+
+	//recalculate interactions and score for fragments with strong interactions
+	iract = prolig_Calculate [itypes, s_lim_atoms, rec_atoms, iopt];
+	aSetSelected [s_lim_atoms, 1];
+	[iract_2, iract_3] = [iract(2), iract(3)];
+	lrmask = indexof [iract_2, s_lim_atoms] and indexof [iract_3, rec_atoms];
+	rlmask = indexof [iract_3, s_lim_atoms] and indexof [iract_2, rec_atoms];
+	mask = andE [indexof [iract(1), ['Hbond', 'Metal', 'Ionic', 'Covalent']],lrmask or rlmask];
+	//local arene_mask = andE [iract(1) == 'Arene', lrmask or rlmask];
+	//mask = mask or arene_mask;
+	s_lim = select [iract(2), iract(3), lrmask] | mask;	// multi atom
+	s_rim = select [iract(3), iract(2), lrmask] | mask;	// for arene
+	s_score = iract(4) | mask;
+	print s_score;
+	//sleep 100;
+	local mean_score = (add s_score)/(length s_score);
+	write ['Mean score: {}\n', (add s_score)/(length s_score)];
+
+	db_Write [mdb, entry, tagpoke[[],'s_score_strong', mean_score]];
+	oDestroy frags;
+endloop
+	
+endfunction;

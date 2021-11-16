@@ -1,0 +1,109 @@
+#svl
+//this function will calculate 2 sets of distances for every pharmacophore in a directory:
+//the mean, min, and max interfeature distance and the mean, min, and max feature to centroid distance
+//
+//distances will be written to a database called ph4_distances.mdb
+function ph4_EditorWkeyList;
+global function feat_dist_db_score_based_class_dir []
+
+local folders = flist[];
+local folder;
+
+//loop through ef, gh, moefrags, rec_ef, rec_gh folders
+for folder in folders loop
+	cd folder;
+	Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+	Open flist [[],'*_minrec.moe'];
+
+	// open sitefinder
+	loop
+		Open '$MOE/svl/run/sitefind.svl';
+		local wkey2 = WindowKeyList[];
+		WindowTrigger [wkey2, [panel:'Apply']];
+		WindowTrigger [wkey2, [disp_aselect:1]];
+		sleep 0.2;
+	if notnull SelectedAtoms[] then break;
+	endif
+	endloop;
+	
+	sleep 5;
+	WindowDestroy wkey2;
+
+	local site_center = oCentroid SelectedAtoms[];
+	local site_dum = mol_Create [ '', [ '', '', '', 1 ], 
+			[ '*', 1, " ", 'none', 1 ], 
+			[ 'LP', 0, 'sp', 0, 0, [ [] ], 0, 'DU', 0, site_center(1),site_center(2),site_center(3) ] ];
+	aSetSelected [SelectedAtoms[], 0];
+	print oType site_dum;
+	site_dum = cAtoms site_dum;
+
+	local mdb_key = db_Open ['ph4_distances_class.mdb', 'create'];
+
+	db_EnsureField [mdb_key, 'filename', 'char' ];
+	db_EnsureField [mdb_key, 'max_feat', 'float' ];
+	db_EnsureField [mdb_key, 'min_feat', 'float' ];
+	db_EnsureField [mdb_key, 'avg_feat', 'float' ];
+
+	db_EnsureField [mdb_key, 'max_centr', 'float' ];
+	db_EnsureField [mdb_key, 'min_centr', 'float' ];
+	db_EnsureField [mdb_key, 'avg_centr', 'float' ];
+
+	local ph4;
+	local ph4_files = flist [[],'*(class).ph4'];
+
+	local entry;
+	for ph4 in ph4_files loop
+		Open ph4;
+		local wkey = ph4_EditorWkeyList [];
+		print 'Features to Features';
+		local [fatoms] = cAtoms last droplast Chains[];
+		local mtx = aDist [tr fatoms, fatoms];
+		mtx = cat mtx;
+		mtx = pack mtx;
+		print cat ['Max:', max mtx];
+		print cat ['Min:', min mtx];
+		local max = max mtx;
+		local min = min mtx;
+		local mean = (add mtx)/(length mtx);
+		print cat ['Mean:', mean];
+	
+		print 'Centroid to Features';
+		local mtx2 = aDist [site_dum, fatoms];
+		local mean_2 = (add mtx2)/(length mtx2);
+		local min_2 = first sort mtx2;
+		local max_2 = last sort mtx2;
+
+		local value = [
+			filename: swrite ['{G}', fbase ph4], 
+			max_feat: max, 
+			min_feat: min, 
+			avg_feat: mean, 
+			max_centr: max_2, 
+			min_centr: min_2, 
+			avg_centr: mean_2];
+	
+		db_Write [mdb_key, 0, value];
+		sleep 2;
+		WindowDestroy wkey;
+	endloop
+
+	local avg_maxfeat = add db_ReadColumn [mdb_key,'max_feat'] / length db_ReadColumn [mdb_key,'max_feat'];
+	local avg_minfeat = add db_ReadColumn [mdb_key,'min_feat'] / length db_ReadColumn [mdb_key,'min_feat'];
+	local avg_avgfeat = add db_ReadColumn [mdb_key,'avg_feat'] / length db_ReadColumn [mdb_key,'avg_feat'];
+	local avg_maxcentr = add db_ReadColumn [mdb_key,'max_centr'] / length db_ReadColumn [mdb_key,'max_centr'];
+	local avg_mincentr = add db_ReadColumn [mdb_key,'min_centr'] / length db_ReadColumn [mdb_key,'min_centr'];
+	local avg_avgcentr = add db_ReadColumn [mdb_key,'avg_centr'] / length db_ReadColumn [mdb_key,'avg_centr'];
+
+	print avg_maxfeat;
+	print avg_minfeat;
+	print avg_avgfeat;
+	print avg_maxcentr;
+	print avg_mincentr;
+	print avg_avgcentr;
+
+	cd '..';
+endloop
+
+write 'Done.\n';
+
+endfunction

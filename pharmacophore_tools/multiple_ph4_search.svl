@@ -1,0 +1,82 @@
+#svl
+function ph4_Search;
+global function multiple_ph4_search [mdb];
+
+//This script will allow you to perform pharmacophores searches on a database (mdb) using all .ph4 files in a directory.
+//
+//Output databases will be named after the pharmacophore used for searching.
+
+local ph4s = flist [[], '*.ph4'];
+local ph4;
+
+local ph4_hits;
+local hitv = [];
+
+for ph4 in ph4s loop
+	logfile 'log.txt';
+	ph4_Search [mdb, ph4, 
+			[
+			abspos                : 0,
+			action                : 0,
+			descexpr              : '',
+			esel                  : 0,
+			maxconfhits           : 0,
+			maxmolhits            : 0,
+			molfield              : 'mol',
+			mseqfield	      :'mseq',
+			o_molfield            : 'mol',
+			o_mseqfield           : 'mseq',
+			o_rmsdxfield          : 'rmsdx',
+			o_rscore_colfield     : 'rscore[F#]',
+			o_rscore_sumfield     : 'rscore',
+			out_append            : 0,
+			out_dbfile            : tok_cat [fbase ph4, '.mdb'],
+			out_dbv               : 0,
+			out_type_molecules    : 1,
+			sortby                : 'rmsdx',
+			use_mname             : 0,
+			use_mseqfield         : 1,
+			use_o_fileIdxField    : 0,
+			use_o_fileNameField   : 0,
+			use_o_hitmapfield     : 0,
+			use_o_hitmapfieldC    : 0,
+			use_o_hitsizefield    : 0,
+			use_o_hitsizefieldC   : 0,
+			use_o_molfield        : 1,
+			use_o_mseqfield       : 1,
+			use_o_rmsdfield       : 0,
+			use_o_rmsdxfield      : 1,
+			use_o_rowfield        : 0,
+			use_o_rscore_colfield : 1,
+			use_o_rscore_sumfield : 1,
+			use_o_rscore_vecfield : 0,
+			use_out_dbfile        : 1,
+			usepsilo              : 0
+		]
+];
+
+logfile 0;
+logfile[];
+
+//obtain hit molecules from log file
+local hitline = last droplast droplast freadb ['log.txt', 'line', INT_MAX];
+local ws = wordsplit [hitline, " "];
+local hits = ws(3);
+hits = atoi token hits;
+sleep 0.1;
+hitv = cat [hitv, hits];
+ph4_hits = 0;
+
+endloop
+
+//loop to print results
+local i = 0;
+write ['\n'];
+for ph4 in ph4s loop
+	i = inc i;
+	write [tok_cat [ph4, ' hits: {}\n'], hitv(i)];
+endloop
+
+write 'Done.\n';
+
+endfunction

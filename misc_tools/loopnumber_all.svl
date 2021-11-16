@@ -1,0 +1,32 @@
+#svl
+// Script/Commentary by Greg Szwabowski, 8/22/19
+// This script is used to loop through databases in a directory
+// and number each entry within the database. Useful to get data
+// back in order after you've sorted it.
+
+global function loopnum_dir []
+                local entry_key;
+local counter = 1;
+local files = flist [[],'*.mdb'];
+local mdb_key, database_file, entries, nentries;
+
+for database_file in files loop
+	mdb_key = db_Open [database_file, 'read-write'];
+	db_CreateField [mdb_key, 'index','int'];
+	entries = db_Entries mdb_key;
+	nentries = db_nEntries database_file;
+	if nentries == 0 then
+		print 'empty';
+	else
+		for entry_key in entries loop
+			db_Write [mdb_key, entry_key, tagpoke[[],'index', counter]];
+			counter = counter + 1;
+			print counter;
+			print nentries;
+				if counter == nentries + 1 then
+					counter = 1;
+				endif
+		endloop
+endif
+endloop
+endfunction

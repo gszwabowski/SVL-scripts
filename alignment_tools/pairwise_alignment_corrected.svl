@@ -1,0 +1,155 @@
+//This version of the script edits values in the first matrix column
+//to "correct" them, since they appear off
+function pro_Align;
+function pro_ReadMDA;
+function _pro_Align_Residues;
+global function pairwise_alignment []
+
+// Helper function to get aligned residue letter matrix from residue keys.
+// It returns the one-letter alignment and mask of gaps and unknown
+// residues (X).
+local function get_letter_matrix res
+    local pos	= app x_pack res;
+    local maxrp	= maxR pos;
+    local sym	= apt put [[rep [".", maxrp]], pos, rLetter2 app pack res];
+    local R = sym <> ".";
+    local X = sym <> "X" and R;
+    local mask = not andE not R;
+    sym = sym || [mask];		// pack alignment (subunit offset gaps)
+    R = R   || [mask];
+    X = X   || [mask];
+    return [sym, R, X];
+endfunction
+
+// Return identity matrix for residues from atoms.
+local function get_identity_matrix [residues, opt]
+    local [seq, res, X] = get_letter_matrix residues;
+
+    local i, idx = x_id res, S = matid length res;
+    for i = 1, length seq loop
+	S(i) = put [S(i), idx, app add ((seq[i] == seq[idx]) and X[i])];
+	idx = dropfirst idx;
+    endloop
+
+    S = 100 * (S + tr S) * invz app add res;
+    S = apt poke [S, x_id S, 100];
+
+    return tr S;
+endfunction
+
+// Return similarity matrix for residues. This is here used for the
+// alignment check only!
+local function get_similarity_matrix [residues, opt]
+    local [seq, res, X] = get_letter_matrix residues;
+
+    local [mat,sym] = pro_ReadMDA [opt.mda,opt.mda2]; //!!! for align check only
+
+    seq = apt indexof [seq, [sym]];
+    seq = apt mput [seq, not seq, indexof ["X", sym]];
+
+    local i, V, x = tr seq;
+    for i = 1, length seq loop;
+	V(i) = add (0 < apt get [mat[seq(i)], x] and X(i));
+    endloop;
+
+    return tr (100 * V * invz app add res);
+endfunction
+
+////////////////////////////////////////////
+
+local chains = Chains[];
+local chain;
+local diff_chain;
+local similarities = [];
+local correct_sims = [];
+local sim;
+local table_matrix = [];
+
+//generate matrix to be edited later
+local matrix_counter = 0;
+while matrix_counter < length chains loop
+	local row = igen length chains;
+	table_matrix = cat[table_matrix, [row]];
+	matrix_counter = inc matrix_counter;
+endloop
+
+//return table_matrix;
+
+local put_counter = 1;
+
+for chain in chains loop
+	//local diff_chains = diff[chains, chain];
+	//for diff_chain in diff_chains loop
+	for diff_chain in chains loop
+		pro_Align [
+			[chain, diff_chain],
+			[
+				mda: 'blosum62',
+				gapstart: 10.0,
+				gapextend: 2.0,
+				method: 'tree-based',
+				round_robin: 1,
+				shuffle: 1,
+				max_iteration: 100,
+				failure_count: 25,
+				enable_structural: 0, //sequence only alignment
+				gapstart_structural: 1.0,
+				gapextend_structural: 0.1,
+				realign_only: 0,
+				retain_frozen_gaps: 0,
+				restrict: 'All Residues',
+				chain_blocks: [],
+				split_by_subunit: 1,
+				superpose: 0,
+				print_table: 0]
+			];
+	local compared_chains = cat [chain, diff_chain];
+	local chain_number = first cNumber compared_chains;
+	print cNumber compared_chains;
+	local res = _pro_Align_Residues [compared_chains];
+	local mat = get_identity_matrix [res];
+	print mat;
+	//print last first mat;
+	similarities = cat[similarities, last first mat];
+	if chain_number == 1 then
+		correct_sims = cat[correct_sims, first last mat];
+	endif		
+	endloop
+write ['Comparing chain {} to all other chains...\n', chain_number];
+endloop
+
+//write table
+logfile ['chain_similarity_report.txt'];
+local chain_num;
+write ['\t'];
+for chain_num = 1, length chains, 1 loop
+	write ['{}\t', chain_num];
+endloop
+
+write '\n';
+write ['{}', 1];
+
+local counter = 0;
+local row_counter = 1;
+local correct_sims_counter = 2; //start at 2 so 100 isn't written twice
+for sim in similarities loop
+	if row_counter > 1 and  counter == 0 then
+		write ['\t{f.1}', correct_sims[correct_sims_counter]];
+		correct_sims_counter = inc correct_sims_counter;
+	else
+		write ['\t{f.1}', sim];
+	endif
+	counter = inc counter;
+	if counter == length chains and row_counter <> length chains then
+		row_counter = inc row_counter;
+		write ['\n{}', row_counter];
+		counter = 0;
+	endif
+endloop
+
+logfile[];
+
+ted_Open 'chain_similarity_report.txt';
+endfunction
+			
+			

@@ -1,0 +1,152 @@
+global function pharmcount_activationstate [activation_state, receptor, db_mols, db_active_mols]
+//arguments
+//---------
+//activation_state: 'active' or 'inactive'
+
+//make a copy of the ph4 search results
+_fcopy ['ph4_search_output_5feats.mdb', 'ph4_search_output_5feats_AS.mdb'];
+local ph4_mdb = 'ph4_search_output_5feats_AS.mdb';
+
+//create new fields for EF/GH recalculations
+db_EnsureField [ph4_mdb, 'Actives_AS', 'int'];
+db_EnsureField [ph4_mdb, 'Enrichment_AS', 'float'];
+db_EnsureField [ph4_mdb, 'GH_AS', 'float'];
+
+
+local ph4_entries = db_Entries ph4_mdb;
+local ph4_entry;
+
+for ph4_entry in ph4_entries loop
+	local [filename] = db_ReadFields [ph4_mdb, ph4_entry, 'filename'];
+	local hits = db_ReadFields [ph4_mdb, ph4_entry, 'Hits'];
+	print filename;
+	filename = token filename;
+	local filename_db = tok_cat [fbase token filename, '.mdb'];
+	local count = 0;
+	local prior_mseq = 0;
+	local i=0;
+	local sum = [];
+	local EF, GH;
+	
+	//not every .ph4 had search results, use isnull to check if .mdb exists. if not, write NaN to new EF and GH fields
+	if isnull flist [[], filename_db] then
+		db_Write [ph4_mdb, ph4_entry, tagpoke[[],'Actives_AS', 0]];
+		db_Write [ph4_mdb, ph4_entry, tagpoke[[],'Enrichment_AS', NaN]];
+		db_Write [ph4_mdb, ph4_entry, tagpoke[[],'GH_AS', NaN]];
+	
+	//if the activation state is active, only count agonists
+	elseif activation_state == 'active' then
+		local entries = db_Entries filename_db;
+		local entry;
+		local index;
+		for entry in entries loop
+			local entry_record = db_Read [filename_db, entry]; 
+			local values = last untag entry_record; // removes tags from tagged vector, just values
+
+			if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+				prior_mseq = values(2);
+				for index in values loop // for each mseq in all mseqs
+					i=i+1;
+					if eqL [receptor, index] then // if the top level arguments are identical AND 
+						if values(i-5)  then
+							count = count+1;
+						endif
+					endif
+				endloop
+				i=0;
+			endif
+		endloop
+
+		local db_active_rate = db_active_mols/db_mols;
+		local active_rate = count/hits;
+		EF = active_rate/db_active_rate;
+		//EF = (count/hits)/(db_active_mols/db_mols);
+		GH = ((count*((3*count)+hits))/(4*hits*db_active_mols)) * (1 -(hits-count)/(db_mols-db_active_mols));
+		
+		print count;
+		print hits;
+		print db_mols;
+		print db_active_mols;
+		print ' ';
+		
+		print EF;
+		print GH;
+		db_Write [ph4_mdb, ph4_entry, tagpoke[[],'Actives_AS', count]];
+		db_Write [ph4_mdb, ph4_entry, tagpoke[[],'Enrichment_AS', EF]];
+		db_Write [ph4_mdb, ph4_entry, tagpoke[[],'GH_AS', GH]];
+		count = 0; //reset count for next entry
+		EF = 0;
+		GH = 0;
+
+	//if the activation state is inactive, only count inverse agonists and antagonists
+	elseif activation_state == 'inactive' then
+		entries = db_Entries filename_db;
+		
+		//antagonist count
+		for entry in entries loop
+			entry_record = db_Read [filename_db, entry]; 
+			values = last untag entry_record; // removes tags from tagged vector, just values
+
+			if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+				prior_mseq = values(2);
+				for index in values loop // for each mseq in all mseqs
+					i=i+1;
+					if eqL [receptor, index] then // if the top level arguments are identical AND 
+						if values(i-4)  then
+							count = count+1;
+						endif
+					endif
+				endloop
+				i=0;
+			endif
+		endloop
+		
+		//reset prior_mseq and i to 0 before recounting with other offset value (3 rather than 4)
+		prior_mseq= 0;
+		i=0;
+		
+		//inverse agonist count
+		for entry in entries loop
+			entry_record = db_Read [filename_db, entry]; 
+			values = last untag entry_record; // removes tags from tagged vector, just values
+
+			if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+				prior_mseq = values(2);
+				for index in values loop // for each mseq in all mseqs
+					i=i+1;
+					if eqL [receptor, index] then // if the top level arguments are identical AND 
+						if values(i-3)  then
+							count = count+1;
+						endif
+					endif
+				endloop
+				i=0;
+			endif
+		endloop
+		
+		db_active_rate = db_active_mols/db_mols;
+		active_rate = count/hits;
+		EF = active_rate/db_active_rate;
+		//EF = (count/hits)/(db_active_mols/db_mols);
+		GH = ((count*((3*count)+hits))/(4*hits*db_active_mols)) * (1 -(hits-count)/(db_mols-db_active_mols));
+		
+		print count;
+		print hits;
+		print db_mols;
+		print db_active_mols;
+		print ' ';
+		print EF;
+		print GH;
+		db_Write [ph4_mdb, ph4_entry, tagpoke[[],'Actives_AS', count]];
+		db_Write [ph4_mdb, ph4_entry, tagpoke[[],'Enrichment_AS', EF]];
+		db_Write [ph4_mdb, ph4_entry, tagpoke[[],'GH_AS', GH]];
+		count = 0; //reset count for next entry
+		EF = 0;
+		GH = 0;
+	endif
+endloop
+
+write 'Done.\n';
+endfunction
+
+

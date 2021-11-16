@@ -1,0 +1,114 @@
+#svl
+
+global function results2excel_7feats_dir_all[]
+
+local receptor_folders = flist[];
+
+//local receptor_folders2 = dropfirst dropfirst dropfirst dropfirst receptor_folders;
+
+//print receptor_folders2; 
+local receptor_folder;
+
+for receptor_folder in receptor_folders loop
+	cd receptor_folder;
+
+	local text_files = flist[[],'*.txt'];
+	local folders = flist[];
+	folders = diff [folders, text_files];
+	local folder;
+
+	logfile 'results_cat.txt';
+
+	for folder in folders loop
+		cd folder;
+		local line_count = 1;
+		local feat_count = 1;
+		local score_count = 1;
+
+		local score_types = ['dE_class', 'dE', 'dU_class', 'dU'];
+		local score;
+	
+		if folder <> first folders then 
+			write '\n';
+		endif
+
+		write ['{}\n',tok_cat [folder]];
+		write ['{}\n',tok_cat ['Hits', ':']];
+
+
+		loop
+			line_count = line_count + 1;
+			local hits1 = token last fieldsplit [last freadb ['results.txt', 'line', line_count], ": "];
+			feat_count = feat_count + 1;
+
+			line_count = line_count + 1;
+			local hits2 = token last fieldsplit [last freadb ['results.txt', 'line', line_count], ": "];
+			feat_count = feat_count + 1;
+
+			line_count = line_count + 1;
+			local hits3 = token last fieldsplit [last freadb ['results.txt', 'line', line_count], ": "];
+			feat_count = feat_count + 1;
+		
+			line_count = line_count + 1;
+			local hits4 = token last fieldsplit [last freadb ['results.txt', 'line', line_count], ": "];
+			feat_count = feat_count + 1;
+		
+			line_count = line_count + 1;
+			local hits5 = token last fieldsplit [last freadb ['results.txt', 'line', line_count], ": "];
+			feat_count = feat_count + 1;
+		
+			write [tok_cat[hits1, '\t', hits2, '\t', hits3, '\t', hits4, '\t', hits5, '\n']];
+	
+			score_count = score_count + 1;
+	
+			until score_count == 5
+		endloop
+
+//print cat ['line_count', line_count];
+//return;
+
+	line_count = line_count + 1;
+	score_count = 1;
+	write ['{}\n',tok_cat ['Actives', ':']];
+
+	loop
+		line_count = line_count + 1;
+		local actives1 = token last fieldsplit [last freadb ['results.txt', 'line', line_count], ": "];
+		feat_count = feat_count + 1;
+
+		line_count = line_count + 1;
+		local actives2 = token last fieldsplit [last freadb ['results.txt', 'line', line_count], ": "];
+		feat_count = feat_count + 1;
+
+		line_count = line_count + 1;
+		local actives3 = token last fieldsplit [last freadb ['results.txt', 'line', line_count], ": "];
+		feat_count = feat_count + 1;
+	
+		line_count = line_count + 1;
+		local actives4 = token last fieldsplit [last freadb ['results.txt', 'line', line_count], ": "];
+		feat_count = feat_count + 1;
+		
+		line_count = line_count + 1;
+		local actives5 = token last fieldsplit [last freadb ['results.txt', 'line', line_count], ": "];
+		feat_count = feat_count + 1;
+		
+		write [tok_cat[actives1, '\t', actives2, '\t', actives3, '\t', actives4, '\t', actives5, '\n']];
+	
+		score_count = score_count + 1;
+	
+	until score_count == 5
+	endloop
+	
+	cd '..';
+endloop
+
+cd '..';
+
+endloop
+
+logfile[];
+endfunction
+
+	
+	
+	

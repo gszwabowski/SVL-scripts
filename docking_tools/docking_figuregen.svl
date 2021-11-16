@@ -1,0 +1,93 @@
+function fwrite_PNG;
+global function docking_figuregen [ligand_color, rec_color, res_color, res_nums]
+//Arguments:
+//ligand_color: desired ligand atom color. Available colors can be listed by calling PLOT_COLORS in the SVL Command window.
+//rec_color: desired receptor color. 'default' will be the default MOE color scheme, otherwise use a color listed in PLOT_COLORS
+//res_nums: residue UID numbers entered as a vector or integers ex. [34, 65, 144]
+//Instructions:
+//1. Load in all receptors from a database
+//2. Load in all ligands from a database
+
+local chain;
+local rec_chains = [];
+local ligand_chains = [];
+
+for chain in Chains[] loop
+	if cResidueCount chain > 1 then
+		rec_chains = cat[rec_chains, chain];
+	elseif cResidueCount chain == 1 then
+		ligand_chains = cat[ligand_chains, chain];
+	endif;
+endloop
+
+//hide all receptor ribbons/atoms
+rSetRibbonEnable [oChildren rec_chains, 0];
+aSetHidden [oChildren oChildren Chains[], 1];
+
+local i, rec_chain, lig_chain, res_num;
+
+for i = 1, length rec_chains, 1 loop
+	//render receptor and ligand atoms
+	rSetRibbonMode [oChildren rec_chains(i), 'tube'];
+	if rec_color == 'default' then
+		rSetRibbonColorBy [oChildren rec_chains(i), 'r:aseg'];
+	else
+		rSetRibbonRGB [oChildren rec_chains(i), icolor rec_color];
+		rSetRibbonColorBy [oChildren rec_chains(i), 'rgb'];
+	endif
+	rSetRibbonEnable [oChildren rec_chains(i), 1]; //render receptor
+	aSetHidden [cat oChildren oChildren ligand_chains(i), 0]; //render ligand atoms
+	aSetRGB [cat oChildren oChildren ligand_chains(i), icolor ligand_color];
+	aSetColorBy [cat oChildren oChildren ligand_chains(i), 'a:rgb'];
+//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	//render specific residues if res_nums argument is entered
+	if notnull res_nums then
+		local [residues] = oChildren rec_chains(i);
+		aSetRGB [cat oChildren residues, icolor res_color]; //set res atom color
+		for res_num in res_nums loop
+			local rindex = indexof [res_num, rUID residues];
+			aSetHidden [cat oChildren residues(rindex), 0]; //render residue atoms
+		endloop
+	endif
+
+	//prompt user to adjust view when first receptor is rendered
+	if i == 1 then
+        	local wkey = WindowCreate [
+        	name : 'ViewPrompt',
+		location: 'MOE',
+		title : 'Adjust the view to your liking.',
+ 		Button: [
+                	name : 'button',
+                	text : 'OK'
+           		]   	
+		];
+		local v = WindowWait [wkey];
+		WindowDestroy wkey;
+	endif
+
+	//export current view of system as a .png image
+	local image = ViewGetImage [];
+	fwrite_PNG [tok_cat['entry_', totok i, '.png'], image, [
+		transparent_background: 1,
+		dpi: 600
+		]
+	];
+
+	sleep 1;
+
+	//re-hide receptor and ligand atoms
+	rSetRibbonEnable [oChildren rec_chains(i), 0]; //render receptor
+	aSetHidden [oChildren oChildren ligand_chains(i), 1]; //render ligand atoms
+	
+	//hide residues
+	if notnull res_nums then
+		for res_num in res_nums loop
+			rindex = indexof [res_num, rUID residues];
+			aSetHidden [cat oChildren residues(rindex), 1]; //render residue atoms
+		endloop
+	endif
+
+endloop
+
+
+endfunction

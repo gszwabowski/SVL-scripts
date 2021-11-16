@@ -1,0 +1,255 @@
+//
+//	pdb2mdb.svl			convert a dir of pdb files into 
+//					an MOE database
+//
+//	27-feb-2002 (db) an option to import only the ligands
+//	06-oct-2000 (db) created
+//
+//
+// COPYRIGHT (C) 2000-2002 CHEMICAL COMPUTING GROUP INC.  ALL RIGHTS RESERVED.
+//
+// PERMISSION TO USE, COPY, MODIFY AND DISTRIBUTE THIS SOFTWARE IS HEREBY
+// GRANTED PROVIDED THAT: (1) UNMODIFIED OR FUNCTIONALLY EQUIVALENT CODE
+// DERIVED FROM THIS SOFTWARE MUST CONTAIN THIS NOTICE; (2) ALL CODE DERIVED
+// FROM THIS SOFTWARE MUST ACKNOWLEDGE THE AUTHOR(S) AND INSTITUTION(S); (3)
+// THE NAMES OF THE AUTHOR(S) AND INSTITUTION(S) NOT BE USED IN ADVERTISING
+// OR PUBLICITY PERTAINING TO THE DISTRIBUTION OF THE SOFTWARE WITHOUT
+// SPECIFIC, WRITTEN PRIOR PERMISSION; (4) ALL CODE DERIVED FROM THIS SOFTWARE
+// BE EXECUTED WITH THE MOLECULAR OPERATING ENVIRONMENT (MOE) LICENSED FROM
+// CHEMICAL COMPUTING GROUP INC.
+//
+// CHEMICAL COMPUTING GROUP INC. DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+// SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS,
+// AND IN NO EVENT SHALL CHEMICAL COMPUTING GROUP INC. BE LIABLE FOR ANY
+// SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER
+// RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF
+// CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+// CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+//
+//   Usage: 
+//	1. load this file
+//	2. In the Commands window, type   pdb2mdb 'directory_name'
+//      3. The function creates the MOE database directory_name.mdb
+
+const LIGANDS_ONLY = 0;		// import only the ligands
+
+local function ExtendLight atoms
+    local H = cat aBonds atoms;
+    H = H | aAtomicNumber H <= 1;
+    return uniq cat [atoms,H];
+endfunction
+
+// Waters identifies all water molecules (and attached light atoms)
+// unless their removal would leave no atoms.
+
+local function Waters_ [atoms, opt]
+    local wat = atoms | (
+	    aAtomicNumber atoms == 8
+	and aHeavyValence atoms == 0
+	and aFCharge atoms == 0
+    );
+    wat = ExtendLight uniq cat [wat, cat aBonds wat];
+    local non_wat = diff [atoms, wat];
+    if length non_wat == 0 then return [wat, []]; endif
+    return [non_wat, wat];
+endfunction
+
+// CounterIons identifies all typical counter ions: Column1+, Column2++
+// and Column7- (and their attached light atoms) unless their removal would
+// leave no atoms.
+
+local function CounterIons [atoms, opt]
+    local ion = atoms | (
+	    aHeavyValence atoms == 0
+	and indexof [el_spValence aElement atoms, [1,2,7]]
+    );
+    ion = ExtendLight uniq cat [ion, cat aBonds ion];
+    local non_ion = diff [atoms, ion];
+    if length non_ion == 0 then return [ion, []]; endif
+    return [non_ion, ion];
+endfunction
+
+// OxygenIons identifies OH- and O-- ions (and any attached light atoms)
+
+local function OxygenIons [atoms, opt]
+    local ion = atoms | aHeavyValence atoms == 0 and aAtomicNumber atoms == 8;
+    ion = ExtendLight uniq cat [ion, cat aBonds ion];
+    local non_ion = diff [atoms, ion];
+    if length non_ion == 0 then return [ion, []]; endif
+    return [non_ion, ion];
+endfunction
+
+// SimpleAcidsAndBases identifies any acid/base consisting of a single
+// heavy atom (and the attached light atoms)
+
+local function SimpleAcidsAndBases [atoms, opt]
+    local ion = atoms | (
+	    aHeavyValence atoms == 0
+	and indexof [aAtomicNumber atoms, [5,7,9,17,35,53,85]]
+    );
+    ion = ExtendLight uniq cat [ion, cat aBonds ion];
+
+    local non_ion = diff [atoms, ion];
+    if length non_ion == 0 then return [ion, []]; endif
+    return [non_ion, ion];
+endfunction
+
+// CommonSolvents identifies any common solvents unless the removal would
+// cause the deletion of all atoms
+
+local function CommonSolvents [atoms, opt]
+    const SOLVENT = [
+	'[OQ1][CQ1]',				// methanol
+	'[OQ1][CQ2][CQ1]',			// ethanol
+	'[OQ1][Q3]([CQ1])[CQ1]',		// isopropyl alchohol
+
+	'[ClQ1][CQ2][ClQ1]',			// dichloromethane
+	'[ClQ1][CQ3]([ClQ1])[ClQ1]',		// chloroform
+	'[OQ2]([CQ1][CQ1])[CQ1][CQ1]',		// diethyl ether
+	'[NQ1]#[CQ1]',				// acetonitrile
+
+	'[CQ3]([CQ1])([CQ1])[CQ1][CQ1][CQ1]',	// isohexane
+	'[CQ1][CQ2][CQ2][CQ2][CQ2][CQ1]',	// n-hexane
+	'[CQ2]1[CQ2][CQ2][CQ2][CQ2][CQ2]1',	// cyclohexane
+
+	'[CQ1]C(=O)O[CQ2][CQ1]',		// ethyl acetate
+	'[NQ3]([CQ1])([CQ1])[CQ2]=[OQ1]',	// N,N-dimethylformamide
+	'[SX3+1]([CQ1])([CQ1])[OQ1-]',		// dimethyl sulfoxide
+
+	'[cQ2]1[cQ2][cQ2][cQ2][cQ2][cQ2]1',	// benzene
+	'[CQ1]c1[cQ2][cQ2][cQ2][cQ2][cQ2]1',	// toluene
+	'[NQ1]c1c([CQ1])[cQ2][cQ2]c1([CQ1])'	// 2,6-dimethylaniline
+    ];
+    local i;
+    local solvent_atoms = [];
+
+    for i = 1, length SOLVENT loop
+	local s = sm_MatchAtoms [SOLVENT(i), atoms];
+	s = uniq cat s;
+	if length s then
+	    atoms = diff[atoms,s];
+	    solvent_atoms = append [solvent_atoms,s];
+	endif
+    endloop
+
+    solvent_atoms = ExtendLight uniq cat solvent_atoms;
+    atoms = diff [atoms, solvent_atoms];
+    if length atoms == 0 then return [solvent_atoms, []]; endif
+    return [atoms, solvent_atoms];
+endfunction
+
+// CommonSalts identifies any common salts unless the removal would
+// cause the deletion of all atoms
+
+local function CommonSalts [atoms, opt]
+    const SALT = [
+	'[SX4]([OQ1])([OQ1])([OQ1])[OQ1]',		// sulphate
+	'[ClQ4]([OQ1])([OQ1])([OQ1])[OQ1]',		// perchlorate
+	'[PQ4]([OQ1])([OQ1])([OQ1])[OQ1]',		// phosphate
+	'[SX4]([OQ1])([OQ1])([OQ1])[CQ1]',		// methanesulfonate
+	'[SX4]([OQ1])([OQ1])([OQ1])[FQ1]',		// fluorosulfonate
+	'[SX3]([OX1])([OQ1])[OQ1]',			// hydrogen sulfite
+	'[FeQ4](Cl)(Cl)(Cl)Cl',				// tetrachloroferate
+	'C(=O)([OQ1])C(F)(F)F',				// trifluroacetate
+	'[PQ6](F)(F)(F)(F)(F)F',			// hexaflurophosphate
+	'[SnQ5](Cl)(Cl)(Cl)(Cl)Cl',			// hexaflurophosphate
+	'[SbQ6](Cl)(Cl)(Cl)(Cl)(Cl)Cl',			// hexachloroantimony
+	'[BQ4](F)(F)(F)F',				// tetrafluoroborate
+	'C(=O)([OQ1])C=CC(=O)[OQ1]',			// dimaleate
+	'C(=O)([OQ1])C(=O)[OQ1]',			// tetroxalate
+	'C(=O)([OQ1])CC(=O)[OQ1]',			// malonate
+	'C(=O)([OQ1])[OQ1]',				// carbonate
+	'N(=O)([OQ1])[OQ1]',				// nitrate
+	'[CQ2](=O)[OQ1]',				// formate
+	'[CQ1]C(=O)[OQ1]',				// acetate
+	'C(=[NQ1])([NQ1])[NQ1]',			// guandidine
+	'C(=O)([OQ1])[CQ3](Cl)Cl'			// dichloroacetate
+    ];
+    local i;
+    local salt_atoms = [];
+
+    for i = 1, length SALT loop
+	local s = sm_MatchAtoms [SALT(i), atoms];
+	s = uniq cat s;
+	if length s then
+	    atoms = diff[atoms,s];
+	    salt_atoms = append [salt_atoms,s];
+	endif
+    endloop
+
+    salt_atoms = ExtendLight uniq cat salt_atoms;
+    atoms = diff[atoms, salt_atoms];
+    if length atoms == 0 then return [salt_atoms, []]; endif
+    return [atoms, salt_atoms];
+endfunction
+
+// get_lig returns ligand chain keys
+
+local function get_lig atoms
+
+	// proteins and long water chains
+    local long = cat cAtoms ( Chains[] | (app length cResidues Chains[]) > 10 );
+
+	// waters
+    local waters = second Waters_ [ atoms,[] ];
+
+	// counterions
+    local ions = second CounterIons [ atoms,[] ];
+
+	// O ions
+    local oions = second OxygenIons [ atoms, [] ];
+
+	// acids-bases
+    local acidbase = second SimpleAcidsAndBases [ atoms, [] ];
+
+	// solvents
+    local solvent = second CommonSolvents [ atoms, [] ];
+
+	// salts
+    local salts = second CommonSalts [ atoms, [] ];
+
+	// proteins
+    local prot = diff [long, waters];
+
+	// ligand atoms (perhaps more than one ligand)
+    local ligand = atoms;
+    local type;
+    for type in [long, waters, ions, oions, acidbase, solvent, salts] loop
+	ligand = diff [ligand, type];
+    endloop
+
+    return uniq oParent uniq oParent ligand;
+endfunction
+
+function ReadPDB;
+
+function pdb2mdb dir_name
+    local mdb = db_Open [ tok_cat [ ftail dir_name, '.mdb' ], 'create' ];
+    db_CreateField [ mdb, 'mol', 'molecule'];
+    db_CreateField [ mdb, 'name', 'char'];
+    db_CreateField [ mdb, 'filename', 'char'];
+
+    local files = cat [ flist [dir_name, '*.pdb'], flist [dir_name, '*.ent'] ];
+    local filename;
+    for filename in files loop
+	local pdbchains = ReadPDB [ filename, [] ];
+//        local chains = get_lig cat cAtoms pdbchains;
+        if length pdbchains then
+            db_Write [ 
+	        mdb, 0, [
+		    mol: db_ExtractMolecule pdbchains,
+		    name: swrite cName first pdbchains,
+		    filename: swrite [ftail filename]
+		]
+            ];
+        endif
+	oDestroy pdbchains;
+    endloop
+
+    write [ 
+	'Read molecules from {} of {} pdb files in the directory.\n', 
+	db_nEntries mdb, 
+	length files 
+    ];
+    db_Close mdb;
+endfunction

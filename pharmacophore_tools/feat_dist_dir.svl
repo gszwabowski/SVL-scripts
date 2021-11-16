@@ -1,0 +1,95 @@
+#svl
+//Commentary 1/28/2021
+//Use this script to calculate interfeature and feature to centroid distances
+//for all .ph4 files in a directory. Results will be written to output_mdb
+global function feat_dist_dir [output_mdb, receptor]
+
+Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+Open receptor;
+
+local mdb_key = db_Open [output_mdb, 'create'];
+
+db_EnsureField [mdb_key, 'ph4_name', 'char' ];
+
+db_EnsureField [mdb_key, 'max_feat', 'float' ];
+db_EnsureField [mdb_key, 'min_feat', 'float' ];
+db_EnsureField [mdb_key, 'avg_feat', 'float' ];
+
+db_EnsureField [mdb_key, 'max_centr', 'float' ];
+db_EnsureField [mdb_key, 'min_centr', 'float' ];
+db_EnsureField [mdb_key, 'avg_centr', 'float' ];
+
+local entries = db_Entries output_mdb;
+local ph4;
+local ph4_files = flist [[],'*.ph4'];
+
+// open sitefinder
+	
+	loop
+		Open '$MOE/svl/run/sitefind.svl';
+		local wkey2 = WindowKeyList[];
+	
+	
+	
+		WindowTrigger [wkey2, [panel:'Apply']];
+		WindowTrigger [wkey2, [disp_aselect:1]];
+		sleep 0.2;
+	if notnull SelectedAtoms[] then break;
+	endif
+	endloop;
+	
+	sleep 5;
+	WindowDestroy wkey2;
+
+	local site_center = oCentroid SelectedAtoms[];
+	local site_dum = mol_Create [ '', [ '', '', '', 1 ], 
+			[ '*', 1, " ", 'none', 1 ], 
+			[ 'LP', 0, 'sp', 0, 0, [ [] ], 0, 'DU', 0, site_center(1),site_center(2),site_center(3) ] ];
+	aSetSelected [SelectedAtoms[], 0];
+	//print oType site_dum;
+	site_dum = cAtoms site_dum;
+
+local count = 1;
+
+for ph4 in ph4_files loop
+
+	Open ph4;
+	
+	//print 'Features to Features';
+	local [fatoms] = cAtoms last droplast Chains[];
+	local mtx = aDist [tr fatoms, fatoms];
+	mtx = cat mtx;
+	mtx = pack mtx;
+	//print mtx;
+	local max = max mtx;
+	local min = min mtx;
+	local mean = (add mtx)/(length mtx);
+	//print cat ['Mean:', mean];
+	
+	//print 'Centroid to Features';
+	local mtx2 = aDist [site_dum, fatoms];
+	mtx2 = cat mtx2;
+	mtx2 = pack mtx2;
+	local mean_2 = (add mtx2)/(length mtx2);
+	local min_2 = first sort mtx2;
+	local max_2 = last sort mtx2;
+	
+	local value = [
+		ph4_name: swrite ['{G}', fbase ph4], 
+		max_feat: max, 
+		min_feat: min, 
+		avg_feat: mean, 
+		max_centr: max_2, 
+		min_centr: min_2, 
+		avg_centr: mean_2];
+	
+	db_Write [output_mdb, 0, value];
+
+	WindowDestroy last WindowKeyList[];
+
+endloop
+
+dbv_Open output_mdb;
+write 'Done.\n';
+
+endfunction

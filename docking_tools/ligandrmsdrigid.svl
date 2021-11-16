@@ -1,0 +1,72 @@
+//This script calculates the RMSD between two chains (ideally chains containing ligands) based on two
+//ligand-receptor complexes that have been aligned and superposed based using MOE's built in tools.
+//database_file is your database with ligand poses, database_file2 is your database containing your receptor models, entry_number is which # receptor to import
+//a reference .moe or .pdb with your crystal structure, .mdb with top 10 scoring receptor models, and .mdb with ligand poses need be in the same directory
+
+#svl
+function Close;       
+function pro_Superpose;
+function pro_Align;
+global function ligandRMSDrigid [reference_file, database_file, database_field1, database_file2, database_field2, entry_number];
+
+		Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+		local mdb_key = db_Open [database_file, 'read-write'];
+		local mdb_key2 = db_Open [database_file2, 'read-write'];
+  		local entry_key, rec_entries, ligand, receptor, atoms2, ligand_chain, ligand_name, receptor_chain, receptor_name, ref_chains, mask, ref_residues, rec_residues, ref_ligand, ligand_heavy, ref_heavy;   	
+		local entries = db_Entries mdb_key;
+		local atoms;
+//  create field for Ligand RMSD
+        db_CreateField [mdb_key,'Ligand RMSD','float'];
+		
+//  open reference file
+		Open reference_file;
+		ref_chains = Chains[];
+		[ref_residues] = cResidues ref_chains;
+		[ref_ligand] = ref_chains(2);
+//  open receptor
+		rec_entries = dbv_Entries [database_file2];
+		[receptor] =db_ReadFields [mdb_key2, rec_entries(entry_number), [database_field2]];
+
+		
+//  mask heavy atoms and create heavy reference
+		[atoms] = cAtoms ref_ligand;
+		mask = aElement atoms <> 'H' ;
+		ref_heavy = atoms | mask;
+		
+		
+//  loop through the database to make measurements for each ligand
+        for entry_key in entries loop
+        	[ligand] =db_ReadFields [mdb_key, entry_key,[database_field1]]; //get structure from fieldname
+		[receptor_chain, receptor_name] =db_CreateMolecule receptor;
+		[ligand_chain, ligand_name] =db_CreateMolecule ligand;
+		[rec_residues] = cResidues receptor_chain;
+		[atoms2] = cAtoms ligand_chain;
+		mask = aElement atoms2 <> 'H';
+		ligand_heavy = atoms2 | mask;
+		
+
+
+//	align & superpose chains with ligands
+		pro_Align[Chains[]];
+		pro_Superpose[[Chains[]], [auto_associate:1, accent_conserved: 1]];
+		
+		
+//   measure distances
+		local [dist] = aDist[ref_heavy, ligand_heavy];
+			
+//	 square root of distances
+		local dist_sq = sqr dist;
+
+//	 find RMSD
+		local RMSD = sqrt(add dist_sq/length dist_sq);
+
+//   write ligand RMSD to the database
+               db_Write [mdb_key, entry_key, tagpoke[[],'Ligand RMSD', RMSD[1]]];
+		
+//   destroy one ligand before reading in the next
+         	oDestroy [ligand_chain];
+		oDestroy [receptor_chain];
+
+endloop
+
+endfunction

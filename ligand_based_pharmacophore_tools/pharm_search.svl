@@ -1,0 +1,86 @@
+#svl
+//Commentary 8/27/2020
+//This script will remove training set compounds from a search database and then search
+//that same compound database with a pharmacophore. The "out" type in the pharmacophore
+//search is conformations.
+
+
+function ph4_Search;
+function db_Write;
+global function pharm_search [mdb, ligmdb, ph4fname, ph4output]; 
+
+// mdb is database with 8 compounds used to elucidate (_agonist_ExtNeg.mdb, etc.), ligmdb is the compound database to be searched,
+// ph4fname is .ph4 file used to search ligmdb, ph4output is the desired pharmacophore search output name
+
+
+fcopy [ligmdb, 'temp.mdb']; //create database to filter training set out of
+local lig_ent, value;
+local mdb_key = db_Open [mdb, 'read-write'];
+local mdb_key_lig = db_Open [ligmdb, 'read-write'];
+local ents = db_Entries mdb;
+local lig_ents = db_Entries ligmdb;
+local molnum = db_ReadColumn [ mdb,'Molecule Number']; // read molecule numbers of 8 training compounds
+local temp_entries = db_Entries ['temp.mdb'];
+
+for lig_ent in lig_ents loop
+	print lig_ent;
+	local lig_molnum = db_ReadFields [ligmdb, lig_ent, 'Molecule Number'];
+	local yesno = lig_molnum==molnum; // "yesno" is a vector of binary values indicating whether the molecule number is the same as those in the training set
+	print yesno;
+		for value in yesno loop
+			print lig_molnum;
+			if value == 1 then
+				db_Delete ['temp.mdb', lig_ent]; // if molecule numbers are the same, delete molecule from database to be searched
+			else
+				print ' ';
+			endif
+		endloop
+	
+endloop
+print 'Done removing training set from database to be searched.';
+
+// Options below can be changed based on what type of search is wanted. Running a pharmacophore search using the GUI
+// with your desired options will output an options vector in the SVL command window, values in this options vector can
+// be copied into this script.
+ph4_Search ['temp.mdb', ph4fname, 
+		[
+            abspos                : 0,
+            action                : 0,
+            descexpr              : '',
+            esel                  : 0,
+            maxconfhits           : 0,
+            maxmolhits            : 0,
+            molfield              : 'mol',
+            o_molfield            : 'mol',
+            o_mseqfield           : 'mseq',
+            o_rmsdxfield          : 'rmsdx',
+            o_rscore_colfield     : 'rscore[F#]',
+            o_rscore_sumfield     : 'rscore',
+            out_append            : 0,
+            out_dbfile            : ph4output,
+            out_dbv               : 0,
+            out_type_molecules    : 0,
+            sortby                : 'rmsdx',
+            use_mname             : 0,
+            use_mseqfield         : 0,
+            use_o_fileIdxField    : 0,
+            use_o_fileNameField   : 0,
+            use_o_hitmapfield     : 0,
+            use_o_hitmapfieldC    : 0,
+            use_o_hitsizefield    : 0,
+            use_o_hitsizefieldC   : 0,
+            use_o_molfield        : 1,
+            use_o_mseqfield       : 1,
+            use_o_rmsdfield       : 0,
+            use_o_rmsdxfield      : 1,
+            use_o_rowfield        : 0,
+            use_o_rscore_colfield : 1,
+            use_o_rscore_sumfield : 1,
+            use_o_rscore_vecfield : 0,
+            use_out_dbfile        : 1,
+            usepsilo              : 0
+        ]
+];
+
+fdelete 'temp.mdb';
+endfunction

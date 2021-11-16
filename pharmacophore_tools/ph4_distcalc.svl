@@ -1,0 +1,142 @@
+#svl
+//Commentary by Greg Szwabowski 7/20/2021
+//University of Memphis Chemistry - Baker and Parrill Lab
+//Contact: gszwbwsk@memphis.edu
+//
+//This script is used to obtain: 
+// - a matrix of distances from ph4 features to a binding pocket centroid
+// - a matrix of distances from ph4 features to other ph4 features
+// - the averages, minimums, and maximums of the above values
+//
+//Arguments
+//---------
+//ph4: .ph4 pharmacophore file you wish to analyze
+//receptor: .pdb or .moe file containing a receptor structure
+//
+//Example command
+//---------------
+//ph4_distcalc ['pharmacophore_file.ph4', 'receptor_structure.moe']
+
+function ph4_EditorWkeyList;
+global function ph4_distcalc [ph4, receptor]
+
+Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+loop
+	Open receptor;
+	if notnull Atoms[] == 1 then break;
+	endif
+endloop
+
+local chains = Chains[];
+chains = droplast chains;
+
+// open sitefinder and create dummy atom at the centroid of residues
+//comprising first elucidated site in SiteFinder
+	loop
+		Open '$MOE/svl/run/sitefind.svl';
+		sleep 1;
+		local wkey2 = WindowKeyList[];
+	
+	
+	
+		WindowTrigger [wkey2, [panel:'Apply']];
+		WindowTrigger [wkey2, [disp_aselect:1]];
+		sleep 0.2;
+		if notnull SelectedAtoms[] then 
+			break;
+		endif
+	endloop;
+sleep 5;
+WindowDestroy wkey2;
+
+local site_center = oCentroid SelectedAtoms[];
+local site_dum = mol_Create [ '', [ '', '', '', 1 ], 
+		[ '*', 1, " ", 'none', 1 ], 
+		[ 'LP', 0, 'sp', 0, 0, [ [] ], 0, 'DU', 0, site_center(1),site_center(2),site_center(3) ] ];
+aSetSelected [SelectedAtoms[], 0];
+
+//get dummy atom from dummy chain
+site_dum = cAtoms site_dum;
+
+//open pharmacophore file
+Open ph4;
+
+//write interfeature distance header
+write '\n';
+write 'Interfeature Distances (Å)\n';
+write '----------------------------\n';
+
+local i, vector, distance;
+local [fatoms] = cAtoms last droplast Chains[];
+local mtx = aDist [tr fatoms, fatoms];
+
+//write matrix of feature to feature distances
+write ['\t'];
+for i = 1, length fatoms, 1 loop
+	write ['{}\t', tok_cat['F', totok i]];
+endloop
+
+write '\n';
+write ['F1'];
+i = 1;
+
+for vector in mtx loop
+	for distance in vector loop
+		if distance == 0 then
+			write ['\t-', distance];
+		else
+			write ['\t{f.2}', distance];
+		endif;
+	endloop
+	write['\n'];
+	i = inc i;
+	if i <= length fatoms then
+		write [tok_cat['F', totok i]];
+	else
+		write ['\n'];
+	endif
+endloop
+
+//reshape mtx so all values can be compared
+mtx = cat mtx;
+mtx = pack mtx;
+
+//write max/min/mean values
+write ['Maximum: {f.2}\n', max mtx];
+write ['Minimum: {f.2}\n', min mtx];
+local mean = (add mtx)/(length mtx);
+write ['Mean: {f.2}\n\n', mean];
+
+//write feature to BP centroid distance header
+write '\n';
+write 'Feature to Centroid Distances (Å)\n';
+write '-----------------------------------\n';
+
+//calculate centroid to feature distances
+local mtx2 = aDist [site_dum, fatoms];
+
+//write matrix of feature to centroid distances
+write ['\t'];
+for i = 1, length fatoms, 1 loop
+	write ['{}\t', tok_cat['F', totok i]];
+endloop
+
+write ['\nDU'];
+i = 1;
+
+for distance in mtx2 loop
+	write ['\t{f.2}', distance];
+endloop
+
+write['\n\n'];
+
+//write feature to BP centroid distances
+write ['Maximum: {f.2}\n', max mtx2];
+write ['Minimum: {f.2}\n', min mtx2];
+mean = (add mtx2)/(length mtx2);
+write ['Mean: {f.2}\n', mean];
+
+//Destroy the ph4 editor window
+WindowDestroy ph4_EditorWkeyList [];
+
+endfunction

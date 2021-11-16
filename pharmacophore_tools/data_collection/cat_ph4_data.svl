@@ -1,0 +1,48 @@
+function db_Merge;
+global function cat_ph4_data []
+
+local main_mdb = db_Open['ph4_search_output_5feats.mdb', 'read-write'];
+local dist_mdb = 'ph4_distances.mdb';
+local featcomp_mdb = 'ph4_feature_composition.mdb';
+local s_score_mdb = 'output.mdb';
+
+local entries = db_Entries main_mdb;
+local entry;
+db_EnsureField [main_mdb, 'fbase', 'char'];
+
+for entry in entries loop
+	local ph4_name = tok_cat tok_cat totok db_ReadFields [main_mdb, entry, 'filename'];
+	local ph4_fbase = fbase ph4_name;
+	print ph4_fbase;
+	db_Write [main_mdb, entry, tagpoke[[], 'fbase', string ph4_fbase]];
+endloop
+
+db_Merge [
+	db1: main_mdb, 
+	db2: dist_mdb, 
+	db3: main_mdb,
+	key1: 'fbase',
+	key2: 'filename'];
+
+db_Merge [
+	db1: main_mdb, 
+	db2: featcomp_mdb, 
+	db3: main_mdb,
+	key1: 'fbase',
+	key2: 'filename'];
+
+
+db_Merge [
+	db1: main_mdb, 
+	db2: s_score_mdb, 
+	db3: main_mdb,
+	key1: 'filename',
+	key2: 'filename',
+	import2: 's_score'];
+
+write ['Done.\n'];
+
+endfunction
+
+
+	 

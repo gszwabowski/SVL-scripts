@@ -1,0 +1,304 @@
+//
+//	Complimentation.svl
+// 	Author - Chandler Sears
+
+#set class 'MOE:CCG Support'
+
+function pro_SaltBridges, pro_HydrogenBonds;
+function QuaSAR_Descriptor_List, QuaSAR_Descriptor_Calc;
+function interchain_hbond_salt_contacts,interchain_hydphobe_contacts;
+function process_system;
+function prox_atoms;
+function mdb2mol2;
+function db_ExportTriposMOL2;
+function db_ImportMOL2;
+function db_ExportDB, db_ImportDB;
+
+const DEFAULT_DESC = ['SlogP','Weight','b_1rotN'];
+
+function Complementation [mdbfile, output_token, iteration]
+	
+	local mol2file = mdb2mol2 [mdbfile, iteration];
+	local iteration_max = length db_Entries mdbfile;
+	write(['{f.2}\n', iteration*100/iteration_max]);
+    if not length mol2file then return 0; endif	
+    Close[];
+	// get properties from mol2file
+    local props = 0;
+	local hetero_atoms = 0;
+	local ligand_name = 0;
+	[props, hetero_atoms, ligand_name] = process_system mol2file;
+
+	// get descriptor properties
+    local [dtags, dprops] = untag props;
+
+    local desc_mask = m_join[dtags, first QuaSAR_Descriptor_List[]];
+    local desc = [dtags|desc_mask, dprops|desc_mask];
+    desc = tok_cat apt tok_cat[
+	desc(1), ':\t', app token apt swrite['{}', desc(2)],'\n'];
+	
+	local ix = length props.hb_contacts;
+	
+    output_token = tok_cat [
+	output_token,
+	'\nName: ',
+	fbase ligand_name,
+	'; H-Bond contacts: ',
+	totok ix,
+	'; Available contacts: ',
+	totok hetero_atoms,
+	'; % Complimentation: ',
+	totok (ix * 100 / hetero_atoms),
+	'; Adjusted % Complimentation: ', 
+	totok ((ix+1)/(ix+2) * ix * 100 / hetero_atoms)];
+	
+	local output_length = length string output_token;
+	db_EnsureField [mdbfile, 'Complementation', 'float'];
+	local entries = db_Entries mdbfile;
+	local comp = ((ix+1)/(ix+2) * ix * 100 / hetero_atoms);
+
+	db_Write [mdbfile, entries(iteration), [Complementation: comp]];
+	if iteration == iteration_max then 
+		local report_file = tok_cat[fbase mol2file, '_MOE.txt'];
+		local fnum  = fopenw report_file;
+		fwrite[fnum, '{}', output_token];
+		fclose fnum;
+		fdelete 'tmp.mol2';
+		return 'completed';
+	endif
+	Complementation [mdbfile, output_token, iteration+1, iteration_max];
+	
+endfunction
+
+
+function process_system filename
+
+    local props = [];
+
+    if not length filename then return 0; endif	
+
+    local [protein_chain, ligand_chain] = ReadTriposMOL2 filename;
+    oDestroy ligand_chain;
+
+    local protein_file = tok_cat[fbase filename, '_PROTEIN.mol2'];
+    props.protein_file = protein_file;
+
+    oDestroy Chains[];
+
+    [protein_chain, ligand_chain] = ReadTriposMOL2 filename;
+    local contacts = interchain_hbond_salt_contacts[];
+    contacts.inter_hyd=interchain_hydphobe_contacts[ligand_chain,protein_chain];
+
+    local hb = tr contacts.inter_h;
+    local sb = tr contacts.inter_s;
+    local hyd = tr contacts.inter_hyd;
+
+    local fmt =  '#{}\t{}\t\t{}_{}{}\n';
+
+    if length cat hb then 
+        hb = app token apt swrite[fmt,
+	    indexof[hb(2), cat cAtoms ligand_chain],aName hb(2),
+	    aName hb(1),rName aResidue hb(1), rNumber aResidue hb(1)   ];
+    else 
+	hb = '';
+    endif
+
+    if length cat sb then
+	sb = app token apt swrite[fmt,
+	    indexof[sb(2), cat cAtoms ligand_chain],aName sb(2), 
+	    aName sb(1),rName aResidue sb(1), rNumber aResidue sb(1)
+        ];
+    else
+	sb = '';
+    endif
+
+
+    if length cat hyd then
+	hyd = app token apt swrite[fmt,
+	    indexof[hyd(2), cat cAtoms ligand_chain],aName hyd(2),
+	    aName hyd(1),rName aResidue hyd(1), rNumber aResidue hyd(1)
+        ];
+    else
+	hyd = '';
+    endif
+	
+    props.hb_contacts = hb;
+    props.sb_contacts = sb;
+    props.hyd_contacts = hyd;
+    local total_E = pot_Breakdown[];
+    
+    aSetInert[cat cAtoms ligand_chain, 1];
+    local protein_E = second untag pot_Breakdown[];
+
+    aSetInert[cat cAtoms ligand_chain, 0];
+    aSetInert[cat cAtoms protein_chain, 1];
+    local ligand_E = second untag pot_Breakdown[];
+
+    local interaction_E = tag[
+	first untag total_E,
+	(second untag total_E - protein_E - ligand_E)
+   	];
+
+    props.vdw_interaction = interaction_E.vdw;
+    props.ele_interaction = interaction_E.ele;
+    props.sol_interaction = interaction_E.sol;
+
+    oDestroy protein_chain;
+
+    local ligand_file = tok_cat[fbase filename, '_LIGAND.mol2'];
+    props.ligand_file = ligand_file;
+
+    local ligand_atoms = cat cAtoms ligand_chain;
+    local hetero_atoms = add (aElement ligand_atoms <> 'H' and aElement ligand_atoms <> 'C');
+    local ligand_name = cName Chains[];
+	if tok_length ligand_name > 100 then
+		ligand_name = tok_keep [ligand_name, 50];
+	endif
+    local desc = QuaSAR_Descriptor_List[];
+    local desc_idx = x_join[desc(1),DEFAULT_DESC];
+    local desc_list = [desc(5)[desc_idx], desc(1)[desc_idx]];
+
+    desc =QuaSAR_Descriptor_Calc[desc_list,db_ExtractMolecule ligand_chain];
+    desc = tag[desc_list(2), desc];
+
+    props = cat [props, desc];
+    props.n_chiral = add abs aRSChirality ligand_atoms;
+    oDestroy Chains[];
+
+    local low_E = pot_Breakdown[];
+
+    local e_tags = apt tok_cat[first untag low_E,'_delta_E'];
+    
+    local delta_low_conf = tag[e_tags, ligand_E - second untag low_E]; 
+    local total_delta_strain = add second untag delta_low_conf;
+    
+
+    props = cat[props, delta_low_conf];
+    props.total_delta_strain = total_delta_strain;
+    return [props, hetero_atoms, ligand_name];
+
+endfunction
+
+
+
+function interchain_hbond_salt_contacts[]
+
+    local chains = Chains[];
+    local res = Residues[];
+    local i; 
+    local nchains = length chains;
+    local hatoms1 = [], hatoms2 = [];
+    local satoms1 = [], satoms2 = [];
+    
+    for i = 1, nchains loop
+	local [a1, a2] = pro_HydrogenBonds chains(i);
+	local [s1, s2] = pro_SaltBridges chains(i);
+
+	hatoms1(i) = a1;
+	hatoms2(i) = a2;
+
+	satoms1(i) = s1;
+	satoms2(i) = s2;
+    endloop
+ 
+    local intra_h = uniq apt sort[cat hatoms1, cat hatoms2]; 
+    local intra_s = uniq apt sort[cat satoms1, cat satoms2];
+
+    local res_parents = oParent res;
+    oReparent[ res, first chains];
+
+    local all_h  = uniq apt sort pro_HydrogenBonds first chains;     
+    local all_s  = uniq apt sort pro_SaltBridges first chains;
+
+    local inter_h = diff[all_h, intra_h];
+    local inter_s = diff[all_s, intra_s];
+
+    apt oReparent [res, res_parents];
+
+
+     if length inter_h then
+	inter_h = apt get[inter_h, app x_sort app cNumber app aChain inter_h];
+     endif
+
+     if length inter_s then
+	inter_s = apt get[inter_s, app x_sort app cNumber app aChain inter_s];
+     endif
+
+    return [inter_h:inter_h, inter_s:inter_s];
+
+endfunction
+
+
+function interchain_hydphobe_contacts[query_chain, other_chains]
+
+    local query_atoms = cat cAtoms query_chain;
+    local other_atoms = cat cAtoms other_chains;
+    query_atoms = query_atoms | aElement query_atoms <> 'H';
+
+    local contact_atoms = prox_atoms[other_atoms, query_atoms,  4.5];
+
+    contact_atoms = diff[contact_atoms, query_atoms];
+
+
+    local H_RES = ['VAL','LEU','TRP','PHE','ILE','MET'];
+
+    local contact_mask = andE [
+	m_join[ cat rName oParent contact_atoms , H_RES],
+	aElement contact_atoms == 'C',
+	not aBackbone contact_atoms
+    ];
+	
+    contact_atoms = contact_atoms | contact_mask;
+
+
+    local pairs =uniq apt sort [
+	cat apt rep[contact_atoms, length query_atoms],
+	cat rep[query_atoms, length contact_atoms]
+    ];
+
+    pairs = pairs | app aDist pairs <= 4.5;
+
+    pairs = apt get[pairs, app x_sort app cNumber app aChain pairs];
+
+    return pairs;
+
+
+endfunction
+
+
+local function prox_atoms [atom_set, query_atoms, radius]
+    
+    const PACKET = 50;
+    local r = max [0, radius];
+    local mask = zero atom_set;
+
+    local x;
+    for x in split [x_id atom_set, PACKET] loop
+	local key = prox_open [r, aPos atom_set[x], r/2];
+	local idx = uniq second prox_find [ key, aPos query_atoms, r/2 ];
+	prox_close key;
+	mask = put [mask, x[idx], 1];
+    endloop
+
+    return atom_set | mask;
+
+endfunction
+
+function mdb2mol2 [mdbfile, iteration];
+
+	local name = 'tmp.mol2';
+
+	local mdb_key = db_Open [mdbfile, 'read'];
+	local entries = db_Entries mdb_key;
+	local entry = entries(iteration);
+	db_ExportDB ['tmp.mdb', mdbfile, 'receptor', entry];
+	db_ImportDB ['tmp.mdb', mdbfile, 'mol', 'receptor', 'molecule', [start_entry: iteration, end_entry: iteration]];
+
+	db_ExportTriposMOL2 ['tmp.mdb', name];
+
+	fdelete ['tmp.mdb'];
+	db_Close mdb_key;
+
+	return name;
+
+endfunction

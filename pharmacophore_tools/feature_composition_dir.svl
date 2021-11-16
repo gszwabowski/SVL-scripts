@@ -1,0 +1,93 @@
+#svl
+//Commentary by Greg Szwabowski 12/4/2020
+//This script is used to obtain the feature composition of all pharmacophore files in a directory and 
+//then print the total count of each feature type in all pharmacophores.
+function ph4_EditorGetData;
+function ph4_EditorWkeyList;
+global function feature_composition_dir [];
+
+local ph4, feature, feat_name;
+local ph4s = flist[[], '*.ph4'];
+local hyd_count = 0;
+local don_count = 0;
+local acc_count = 0;
+local ani_count = 0;
+local cat_count = 0;
+local aro_count = 0;
+local donhyd_count = 0;
+local catdon_count = 0;
+local hydaro_count = 0;
+local aniacc_count = 0;
+local donacc_count = 0;
+local i = 1;
+local feat_types = [
+			'Hyd', 
+			'Don', 
+			'Acc', 
+			'Ani', 
+			'Cat', 
+			'Aro', 
+			'Don|Hyd',
+			'Cat&Don',
+			'Hyd|Aro',
+			'Ani&Acc',
+			'Don&Acc'
+		    ];
+			
+			 
+
+for ph4 in ph4s loop
+	Open ph4;
+	local data = ph4_EditorGetData first ph4_EditorWkeyList [];
+	local features = data.F.expr;
+	for feat_name in feat_types loop
+		local tf = feat_name == features;
+		tf = add tf;
+		if feat_name == 'Hyd' then
+			hyd_count = hyd_count + tf;
+		elseif feat_name == 'Don' then
+			don_count = don_count + tf;
+		elseif feat_name == 'Acc' then
+			acc_count = acc_count + tf;
+		elseif feat_name == 'Ani' then
+			ani_count = ani_count + tf;
+		elseif feat_name == 'Cat' then
+			cat_count = cat_count + tf;
+		elseif feat_name == 'Aro' then
+			aro_count = aro_count + tf;
+		elseif feat_name == 'Don|Hyd' then
+			donhyd_count = donhyd_count + tf;
+		elseif feat_name == 'Cat&Don' then
+			catdon_count = catdon_count + tf;
+		elseif feat_name == 'Hyd|Aro' then
+			hydaro_count = hydaro_count + tf;
+		elseif feat_name == 'Ani&Acc' then
+			aniacc_count = aniacc_count + tf;
+		else donacc_count = donacc_count + tf;
+		endif
+
+		//count = count + (add tf);
+		//print cat [feat_name, ':', count];
+		//count = 0;
+		i = i + 1;
+		tf = 0;
+	endloop
+
+	
+	sleep 1;
+	WindowDestroy last WindowKeyList[];
+endloop
+
+print cat ['Hyd:', hyd_count];
+	print cat ['Don:', don_count];
+	print cat ['Acc:', acc_count];
+	print cat ['Ani:', ani_count];
+	print cat ['Cat:', cat_count];
+	print cat ['Aro:', aro_count];
+	print cat ['Don|Hyd:', donhyd_count];
+	print cat ['Cat&Don:', catdon_count];
+	print cat ['Hyd|Aro:', hydaro_count];
+	print cat ['Ani&Acc:', aniacc_count];
+	print cat ['Don&Acc:', donacc_count];
+
+endfunction

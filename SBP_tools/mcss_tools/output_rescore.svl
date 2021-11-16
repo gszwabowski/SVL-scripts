@@ -1,0 +1,103 @@
+#svl
+//Commentary by Greg Szwabowski 12/4/2020
+//This script is used to rescore a MCSS output with MOE GBVI scoring.
+//Arguments
+//---------
+//mcss_output: .mdb containing fragments placed with MCSS
+//receptor: .moe file of the receptor used to perform MCSS
+function Close;
+function DockAtoms;
+function db_ImportDB;
+function pro_Join;
+global function output_rescore [mcss_output, receptor];
+
+	db_Open ['ph4_mol_output.mdb', 'create'];
+	db_EnsureField ['ph4_mol_output.mdb', 'ph4_mol', 'molecule'];
+
+	Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+	local mdb_key = db_Open [mcss_output, 'read-write'];
+  	local entry, entry_key, ligand, fragment1, fragment2, fragment3, fragment4, fragment5, fragment_chain, fragment_name, atoms2, ligand_chain, ligand_name, receptor_chain, receptor_name, ref_chains, mask, ref_residues, rec_residues, ref_ligand, ligand_heavy, ref_heavy;   	
+	local entries = db_Entries mdb_key;
+	local atoms, receptor_atoms, ligand_atoms;
+	local count = 0;
+
+for entry_key in entries loop
+	count = count + 1;
+	[fragment1] = db_ReadFields [mdb_key, entry_key, 'Fragment1_mol'];
+	[fragment_chain, fragment_name] =db_CreateMolecule fragment1;
+	[fragment2] = db_ReadFields [mdb_key, entry_key, 'Fragment2_mol'];
+	[fragment_chain, fragment_name] =db_CreateMolecule fragment2;
+	[fragment3] = db_ReadFields [mdb_key, entry_key, 'Fragment3_mol'];
+	[fragment_chain, fragment_name] =db_CreateMolecule fragment3;
+	[fragment4] = db_ReadFields [mdb_key, entry_key, 'Fragment4_mol'];
+	[fragment_chain, fragment_name] =db_CreateMolecule fragment4;
+	[fragment5] = db_ReadFields [mdb_key, entry_key, 'Fragment5_mol'];
+	[fragment_chain, fragment_name] =db_CreateMolecule fragment5;
+	
+	pro_Join Chains[];
+	
+	local newmol = mol_Extract cat cAtoms Chains[];
+	newmol(1) = tok_cat [totok count, '.ph4'];
+	//newmol(2) = tok_cat [totok count, '.ph4'];
+	db_Write ['ph4_mol_output.mdb', 0, tagpoke[[],'ph4_mol', newmol]];
+	Close [force:1, viewreset:1, delgobj:1];
+endloop
+
+	//Open 'ph4_mol_output.mdb';
+
+local opt = [
+    csearch:          0,
+    confGenMethod:    'None',
+    ignoreMseq:       0,
+    retainData:       1,
+    sel_ent_only:     0,
+    sel_ent_only_rec: 0,
+    maxpose:          1,
+    wall:             ['',0,[0,0,0],[1000000,1000000,1000000],0],
+    placement:        'None',
+    placement_opt:       [    ],
+    scoring:       'None',
+    scoring_opt: [    ],
+    refine:        'None',
+    refine_opt:  [fixrec:[]],
+    rescoring:     'GBVI/WSA dG',
+    rescoring_opt:       [    ],
+    remaxpose:     1,
+    dup_placement: 1,
+    dup_refine:    1,
+    descexpr:      '',
+    edsupport:      1
+    ];
+
+	entries = db_Entries 'ph4_mol_output.mdb';
+	db_Open ['ph4_output_scored.mdb', 'create'];
+	
+	count = 0;
+//  loop through the database to create receptor and ligand pairs and then 'dock' them to rescore
+        for entry in entries loop
+		count = count + 1;
+        	[ligand] =db_ReadFields ['ph4_mol_output.mdb', entry, 'ph4_mol']; //get structure from fieldname
+		Open receptor;
+		[ligand_chain, ligand_name] =db_CreateMolecule ligand;
+		[rec_residues] = cResidues receptor_chain;
+		receptor_atoms = cat cAtoms first Chains[];
+		ligand_atoms = cat cAtoms ligand_chain;
+		DockAtoms [receptor_atoms, [], ligand_atoms, 'temp.mdb', opt];
+		db_EnsureField ['temp.mdb', 'filename', 'char'];
+		local temp_ent = first db_Entries 'temp.mdb';
+		db_Write ['temp.mdb', temp_ent, [filename: swrite ['{G}', tok_cat [totok count, '.ph4']]]];
+//   destroy one ligand before reading in the next
+         	oDestroy Chains[];
+ //  import .mdb output into one large database
+		db_ImportDB ['ph4_output_scored.mdb','temp.mdb', []];
+// open db
+		if count == 2 then
+			Open 'ph4_output_scored.mdb';
+		endif
+
+endloop
+
+Open 'ph4_mol_output_scored.mdb';
+write 'Done\n';
+
+endfunction

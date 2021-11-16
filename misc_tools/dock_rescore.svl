@@ -1,0 +1,76 @@
+#svl
+#Commentary by Greg Szwabowski 12/4/2020
+#This function allows for the rescoring of molecules in any database using MOE GBVI scoring.
+#Arguments
+#---------
+#database_file: database file you wish to rescore
+#database_field1: DB field containing ligand
+#database_field2: DB field containing receptor
+#output_mdb: name of output for each molecule's rescoring (temp.mdb will work)
+#cat_mdb: desired name of output database containing all rescored molecules
+
+
+function Close;
+function DockAtoms;
+function db_ImportDB;
+global function dock_rescore [database_file, database_field1, database_field2, output_mdb, cat_mdb];
+
+	Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+	local mdb_key = db_Open [database_file, 'read-write'];
+  	local entry_key, ligand, receptor, atoms2, ligand_chain, ligand_name, receptor_chain, receptor_name, ref_chains, mask, ref_residues, rec_residues, ref_ligand, ligand_heavy, ref_heavy;   	
+	local entries = db_Entries mdb_key;
+	local atoms, receptor_atoms, ligand_atoms;
+local opt = [
+	outrmsd: 0,
+	sel_ent_only_rec: 0,
+	sel_ent_only: 0,
+	wall: [ '', 0, [ 0, 0, 0 ], [ 1000000, 1000000, 1000000 ], 0 ],
+	csearch: 0,
+	confGenMethod: 'None',
+	ignoreMseq: 0,
+	retainData: [ 0, 1 ],
+	placement: 'None',
+	placement_opt: [  ],
+	scoring: 'London dG',
+	scoring_opt: [  ],
+	dup_placement: 1,
+	maxpose: 30,
+	refine: 'None',
+	refine_opt: [ fixrec : '' ],
+	rescoring: 'GBVI/WSA dG',
+	rescoring_opt: [  ],
+	dup_refine: 1,
+	remaxpose: 30,
+	descexpr: '',
+	descexpr: '',
+	receptor_mfield: '',
+	ligand_mfield: 'mol',
+	rxnFile: '',
+	rxsite: [  ],
+	edsupport: 1,
+	ed_data: [ ed_dockpath : '' ],
+	check_pose_geom: [  ],
+	multiLigand: 0,
+	need_dmat: 1,
+	gen_plif: 1,
+	BatchFile: 'dock_batch.svl'
+    ];
+//  loop through the database to create receptor and ligand pairs and then 'dock' them to rescore
+        for entry_key in entries loop
+        [ligand] =db_ReadFields [mdb_key, entry_key,[database_field1]]; //get structure from fieldname
+		[receptor] =db_ReadFields [mdb_key, entry_key, [database_field2]];
+		[receptor_chain, receptor_name] =db_CreateMolecule receptor;
+		[ligand_chain, ligand_name] =db_CreateMolecule ligand;
+		[rec_residues] = cResidues receptor_chain;
+		receptor_atoms = cat cAtoms receptor_chain;
+		ligand_atoms = cat cAtoms ligand_chain;
+		DockAtoms [receptor_atoms, [], ligand_atoms, output_mdb, opt];
+
+//   destroy one ligand before reading in the next
+        oDestroy [ligand_chain];
+		oDestroy [receptor_chain];
+ //  import .mdb output into one large database
+		db_ImportDB [cat_mdb,output_mdb, []];
+
+endloop
+endfunction

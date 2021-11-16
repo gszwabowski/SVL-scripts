@@ -1,0 +1,65 @@
+#svl
+
+#set main 'SSbond'
+
+function pro_Superpose;
+function MM;
+
+global function SSbond [database_file, database_field, start, end, cys1, cys2]
+        Close [force:1, viewreset:1, delgobj:1];        // close any open structures
+        local entry_key;
+	local counter, list, res_list, res_list2, name, atoms1, atoms2;
+        local snapshot, newmol;
+        local snapshot_chains, snapshot_residues;
+        local mask,set1, set2;
+
+        local mdb_key = db_Open [database_file, 'read-write'];
+        local entries = db_Entries mdb_key;
+
+
+//  create field for disulfide-bonded structure
+        db_CreateField [mdb_key,'S-S bonded','molecule'];
+//  loop through the database to make disulfide bonds at noted cysteine residues and minimize the segment from start to end
+
+        for entry_key in entries loop
+                [snapshot] =db_ReadFields [mdb_key, entry_key,[database_field]]; //get structure from database_field provided by user
+                [snapshot_chains, name] =db_CreateMolecule snapshot;
+		[snapshot_residues] = cResidues snapshot_chains;
+
+		[atoms1] = rAtoms [snapshot_residues(cys1)];
+		[atoms2] = rAtoms [snapshot_residues(cys2)];
+
+		Bond [atoms1(6), atoms2(6)];
+
+		counter = end-start+2;
+		while counter < ((end-start+1)*2)
+		loop
+			list[counter] = snapshot_residues[start + counter - (end-start+2)];
+			counter = counter + 1;
+		endloop
+		rSetSelected [Residues[],0];
+		rSetSelected [list,1];
+		res_list = Residues[] | rSelected Residues[];
+
+		oSetCollection['set1',res_list];
+		
+
+		rSetSelected [Residues[],1];
+		rSetSelected [list,0];
+		res_list2 = Residues[] | rSelected Residues[];
+
+		oSetCollection['set2',res_list2];
+		aSetFixed[rAtoms res_list2, 1];
+		MM [pot_charge:1, pot_finalize:1,keep_chirality:'geometry',sd_maxit:1000, cg_maxit:1000, maxit:1000];
+
+		newmol = mol_Extract Chains[];
+
+		aSetFixed[Atoms[],0];
+
+//   write disulfide bonded and minimized molecule to the database
+              	db_Write [mdb_key, entry_key, tagpoke[[],'S-S bonded', newmol]];
+//   destroy one snapshot before reading in the next
+              	oDestroy [snapshot_chains];
+        endloop
+//        Close [force:1, viewreset:1, delogobj:1];
+endfunction

@@ -1,0 +1,40 @@
+//This function is used to obtain molecules that are missing from
+//a database after performing a conformational search.
+//
+//ARGUMENTS
+//=========
+//mdb1: original database (pre conf. search)
+//mdb2: database containing conformations
+//=========
+//Output: molecules that are present in mdb1 but not mdb2 (based on
+//the 'name' field) will be selected in mdb1. These entries can then
+//be saved as their own database from the mdb1 database viewer.
+
+global function get_missing_mols [mdb1, mdb2]
+
+local names_1 = db_ReadColumn [mdb1, 'name'];
+local names_2 = uniq db_ReadColumn [mdb2, 'name'];
+
+local diff_names = diff [names_1, names_2];
+
+local entries = db_Entries mdb1;
+local diff_name, entry;
+
+Open mdb1;
+
+for diff_name in diff_names loop
+	//print diff_name;
+	for entry in entries loop
+		local [entry_name] = db_ReadFields [mdb1, entry, 'name'];
+		//print entry_name;
+		if token entry_name == token diff_name then
+			dbv_EntrySetSelected [ mdb1, entry, 1 ]; 
+		endif
+	endloop
+endloop
+
+write 'Done.\n';
+
+endfunction
+
+

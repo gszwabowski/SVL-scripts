@@ -1,0 +1,42 @@
+#svl
+
+//Commentary 8/27/2020
+//This script is meant to count the frequency at which fragments (from the MOE fragment database) appear in randomly
+//generated pharmacophores.
+//
+//mdb: database containing MCSS output
+
+global function frag_count [mdb]
+
+local mdb_key = db_Open [mdb, 'read-write'];
+local ent;
+local entries = db_Entries mdb_key;
+local frag_names = [ "1,2-dimethylpyrrolidine", "2-butene", "2-butyne", "3-methylindole", "5-methylimidazole", "N-methylformamide", "acetaldehyde", "acetamide", "acetate ion", "acetonitrile", "benzene", "butane", "cyclohexane", "dimethylether", "dimethylsulfone", "ethane", "ethanol", "ethylthiol", "isobutane", "methane", "methanol", "methylamidinium", "methylammonium", "methylchloride", "methylguanidinium", "methylsulfonamide", "methylsulfonate", "methyltetrazolium", "methylthiol", "n,n-dimethylacetamide", "n-methylacetamide", "phenol", "piperidinium", "propane", "propyne", "thiazole", "trifluoromethane", "trimethylammonium", "water" ];
+local molnum_prev = 0;
+local [fn, ft] = db_Fields mdb_key;
+fn = drop [fn, 7];
+fn = keep [fn, 10];
+local fieldname;
+local frag_name;
+local x;
+local count = 0;
+for frag_name in frag_names loop;
+	for ent in entries loop
+		for fieldname in fn loop
+			//print fieldname;
+			[x] = db_ReadFields [mdb_key, ent, fieldname];
+			//print x;
+			//print frag_name;
+			//print [];
+			if x === frag_name then count = count + 1;
+			endif
+		endloop
+	endloop
+//if count > 0 then
+		//print cat [[frag_name], count]; (prints old format, non-pastable in excel)
+//endif
+
+print count; // make sure N-methylformamide is in the correct place!
+count = 0;
+endloop
+endfunction

@@ -1,0 +1,315 @@
+#svl
+
+function db_ImportDB;
+global function feature_hitlist_aggregate [receptor, features];
+//run in each subset folder
+//this doesn't write a .txt
+local mdb, hit, mseq, entry, feature_number;
+
+if features == 7 then
+	local feature_numbers = [3,4,5,6,7];
+elseif features == 6 then
+	feature_numbers = [3,4,5,6];
+elseif features == 5 then
+	feature_numbers = [3,4,5];
+endif
+
+
+
+for feature_number in feature_numbers loop;
+	local mdb_key = db_Open [tok_cat[totok feature_number, 'feature_hitlist_aggregated.mdb'], 'create'];
+	local common_hits_mdb = db_Open [tok_cat[totok feature_number, 'feature_common_hits.mdb'], 'create'];
+	//db_Open ['feature_hitlist_aggregated_4.mdb', 'create'];
+	//db_Open ['feature_hitlist_aggregated_5.mdb', 'create'];
+	//db_Open ['feature_hitlist_aggregated_6.mdb', 'create'];
+	//db_Open ['feature_hitlist_aggregated_7.mdb', 'create'];
+
+	local mdbs = flist [[], tok_cat ['*_', totok feature_number, '.mdb']];
+	//local feat_3 = flist [[],'*_3.mdb'];
+	//local feat_4 = flist [[],'*_4.mdb'];
+	//local feat_5 = flist [[],'*_5.mdb'];
+	//local feat_6 = flist [[],'*_6.mdb'];
+	//local feat_7 = flist [[],'*_7.mdb'];
+
+	local i = 1;
+	local hit_count = 0;
+	local hit_mseq_list = [];
+	local notempty_mdbs = 0;
+
+	for mdb in mdbs loop
+		if notnull mdb then
+			db_ImportDB [mdb_key, mdb, [], []];
+		endif
+
+		if i == 1 then
+			local de_class_hits = uniq db_ReadColumn [mdb, 'mseq'];
+			//print cat ['de_class:', uniq de_class_hits];
+			if length de_class_hits > 0 then
+				notempty_mdbs = notempty_mdbs + 1;
+			endif
+		elseif i == 2 then
+			local de_hits = uniq db_ReadColumn [mdb, 'mseq'];
+			//print cat ['de:', uniq de_hits];
+			if length de_hits > 0 then
+				notempty_mdbs = notempty_mdbs + 1;
+			endif
+		elseif i == 3 then
+			local du_class_hits = uniq db_ReadColumn [mdb, 'mseq'];
+			//print cat ['du_class:', uniq du_class_hits];
+			if length du_class_hits > 0 then
+				notempty_mdbs = notempty_mdbs + 1;
+			endif
+		elseif i == 4 then
+			local du_hits = uniq db_ReadColumn [mdb, 'mseq'];
+			//print cat ['du:', uniq du_hits];
+			if length du_hits > 0 then
+				notempty_mdbs = notempty_mdbs + 1;
+			endif
+		endif
+	
+		i = i+1;
+	endloop	
+		
+		local hits = cat [de_class_hits, de_hits, du_class_hits, du_hits];
+		//print cat ['notempty:', notempty_mdbs];
+	
+	for hit in uniq hits loop
+		if notnull join [hit, de_class_hits] then
+			hit_count = hit_count + 1;
+		endif
+		if notnull join [hit, de_hits] then
+			hit_count = hit_count + 1;
+		endif
+		if notnull join [hit, du_class_hits] then
+			hit_count = hit_count + 1;
+		endif
+		if notnull join [hit, du_hits] then
+			hit_count = hit_count + 1;
+		endif
+	
+		if hit_count == notempty_mdbs then
+			hit_mseq_list = cat [hit_mseq_list, hit];
+		endif
+	
+		hit_count = 0;
+	endloop
+	
+	//print hit_mseq_list;
+	//print cat [tok_cat ['common hits_', totok feature_number, ':'], length hit_mseq_list];
+	write ['{} : {}\n', tok_cat ['common hits_', totok feature_number], length hit_mseq_list];
+	local entries = db_Entries mdb_key;
+
+
+	for mseq in hit_mseq_list loop
+		for entry in entries loop
+			if db_ReadFields [mdb_key, entry, 'mseq'] == mseq then
+				db_ImportDB [common_hits_mdb, mdb_key, [], [], [], [start_entry: indexof[entry, entries], end_entry: indexof[entry, entries]]];
+				break;
+			endif
+		endloop
+	endloop
+	
+	
+	//hit_mseq_list = [];
+endloop
+
+//PHARMCOUNT//
+
+local function pharmcount [mdb, receptor, offset1,offset2,offset3,offset4,offset5]
+Close [force:1, viewreset:1, delgobj:1];        // close any open structures
+
+local entry_key, entry_record, values, index, output_token;
+local files = flist [[],'*.mdb'];
+local output = flist [[],'*_output.mdb'];
+files = diff[files,output];
+local count = 0;
+local prior_mseq = 0;
+local i=0;
+
+//logfile 'pharmcount_log.txt';
+
+
+local mdb_key = db_Open [mdb, 'read'];
+local entries = db_Entries mdb_key;
+local report_file = tok_cat[fbase mdb, '_pharmcount.txt'];	
+//print mdb;
+local sum = [];
+	
+for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+	entry_record = db_Read [mdb_key, entry_key]; 
+	values = last untag entry_record; // removes tags from tagged vector, just values
+
+	if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+		prior_mseq = values(2);
+		for index in values loop // for each mseq in all mseqs
+			i=i+1;
+			if eqL [receptor, index] then // if the top level arguments are identical AND 
+				if values(i-offset1)  then
+					count = count+1;
+				endif
+			endif
+
+		endloop
+		i=0;
+	endif
+	
+//	print entry_record;
+
+endloop
+
+//print count; // print how many 
+sum = cat[sum,count];
+count = 0;
+prior_mseq= 0;
+i=0;
+
+for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+	entry_record = db_Read [mdb_key, entry_key]; 
+	values = last untag entry_record; // removes tags from tagged vector, just values
+
+	if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+		prior_mseq = values(2);
+		for index in values loop // for each mseq in all mseqs
+			i=i+1;
+			if eqL [receptor, index] then // if the top level arguments are identical AND 
+				if values(i-offset2)  then
+					count = count+1;
+				endif
+			endif
+
+		endloop
+		i=0;
+	endif
+	
+//	print entry_record;
+
+endloop
+
+//print count; // print how many 
+sum = cat[sum,count];
+count = 0;
+prior_mseq= 0;
+i=0;
+
+for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+	entry_record = db_Read [mdb_key, entry_key]; 
+	values = last untag entry_record; // removes tags from tagged vector, just values
+
+	if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+		prior_mseq = values(2);
+		for index in values loop // for each mseq in all mseqs
+			i=i+1;
+			if eqL [receptor, index] then // if the top level arguments are identical AND 
+				if values(i-offset3)  then
+					count = count+1;
+				endif
+			endif
+
+		endloop
+		i=0;
+	endif
+	
+//	print entry_record;
+
+endloop
+
+//print count; // print how many 
+sum = cat[sum,count];
+count = 0;
+prior_mseq= 0;
+i=0;
+
+for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+	entry_record = db_Read [mdb_key, entry_key]; 
+	values = last untag entry_record; // removes tags from tagged vector, just values
+
+	if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+		prior_mseq = values(2);
+		for index in values loop // for each mseq in all mseqs
+			i=i+1;
+			if eqL [receptor, index] then // if the top level arguments are identical AND 
+				if values(i-offset4)  then
+					count = count+1;
+				endif
+			endif
+
+		endloop
+		i=0;
+	endif
+	
+//	print entry_record;
+
+endloop
+
+//print count; // print how many
+sum = cat[sum,count]; 
+count = 0;
+prior_mseq= 0;
+i=0;
+
+for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+	entry_record = db_Read [mdb_key, entry_key]; 
+	values = last untag entry_record; // removes tags from tagged vector, just values
+
+	if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+		prior_mseq = values(2);
+		for index in values loop // for each mseq in all mseqs
+			i=i+1;
+			if eqL [receptor, index] then // if the top level arguments are identical AND 
+				if values(i-offset5)  then
+					count = count+1;
+				endif
+			endif
+
+		endloop
+		i=0;
+	endif
+	
+//	print entry_record;
+
+endloop
+
+//print count; // print how many 
+sum = cat[sum,count];
+//print add sum;
+write['{} : {}\n', mdb, add sum];
+count = 0;
+prior_mseq= 0;
+i=0;
+
+//print count; // print how many 
+
+local fnum = fopenw report_file;
+output_token = tok_cat ['\nOffset5:',totok count];
+fwrite[fnum, '{}', output_token];
+fclose fnum;
+count = 0;
+prior_mseq= 0;
+i=0;
+
+//logfile[];
+
+endfunction
+
+//END PHARMCOUNT
+
+pharmcount ['3feature_common_hits.mdb', receptor, 1,2,3,4,5];
+pharmcount ['4feature_common_hits.mdb', receptor, 1,2,3,4,5];
+pharmcount ['5feature_common_hits.mdb', receptor, 1,2,3,4,5];
+if features > 5 then
+	pharmcount ['6feature_common_hits.mdb', receptor, 1,2,3,4,5];
+endif
+
+if features > 6 then
+	pharmcount ['7feature_common_hits.mdb', receptor, 1,2,3,4,5];
+endif
+
+write 'Done.\n';
+
+endfunction
+

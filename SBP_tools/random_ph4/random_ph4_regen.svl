@@ -1,0 +1,208 @@
+#svl
+
+//STRUCTURE BASED PHARMACOPHORE SAMPLING
+//
+//This script is used to create pharmacophores based on a MultiFragment search output.
+//Pharmacophores are capped at 5 features.
+
+function Close;
+function Open;
+function prolig_Calculate;
+function pro_Contacts;
+function db_ImportASCII;
+function ph4_aType;
+function ph4_EditorWkeyList;
+function ph4_EditorGetData;
+function fwrite_PH4;
+function ph4_Search;
+
+
+
+global function random_ph4_regen [receptor, database_file]
+//receptor is _minrec.moe, database_file is output.mdb
+//samp_num: # of fragments to be sampled each iteration
+//iter: number of pharmacophores to create
+//n: previous pharmacophores created, default is 0. This variable is here just in case a job stops midway through ph4 generation.
+//If this script errors out during ph4 generation, n will be the entry number of the last ph4 created.
+
+local entries = db_Entries database_file;
+local entry;
+
+local iterations = 0;
+//local n=0;
+local e_vals = [];
+local towrite;
+local towrite2;
+Open receptor;
+
+for entry in entries loop
+	Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+	Open receptor;
+	local field;
+	local fields = ['Fragment1_mol', 'Fragment2_mol', 'Fragment3_mol', 'Fragment4_mol', 'Fragment5_mol'];
+	local centroids = [];
+	local dummies = [];
+	local i=0;
+	local fragdata = [mol: [], name: [], number: []]; 
+	local fdata = [names: [], number: [], mol: []];
+	for field in fields loop // create all fragments
+		local [ligand] = db_ReadFields [database_file, entry, field]; //get structure from fieldname
+		local [ligand_chain, ligand_name] =db_CreateMolecule ligand;
+	endloop
+	
+	local chains = Chains[];
+	local [rec_atoms] = cAtoms chains(1); // get receptor atoms
+	local frags = dropfirst Chains[]; // create subset of just fragments
+	local frag_chain;
+	local ligkeys = cat cAtoms frags;
+	local use_frags = [];
+	local sel_atoms = []; // empty vector for fragment atoms that are to be selected
+	
+	local itypes = ['Hbond', 'Metal', 'Ionic', 'Covalent', 'Arene', 'Distance'];
+    	local iopt = [
+	emin_hb:	    minE[-0.1, 0.10],
+	emin_hpi:	    minE[-0.1, 0.10],
+	emin_ion:	    0.10,
+	distance_threshold: 4.5,
+	layoutrechb:	    1	// incl. rec-rec hbond in layout
+    ];
+
+	//from prolig2d.svl
+	local iract = prolig_Calculate [itypes, ligkeys, rec_atoms, iopt];
+	local [iract_2, iract_3] = [iract(2), iract(3)];
+	local lrmask = indexof [iract_2, ligkeys] and indexof [iract_3, rec_atoms];
+	local rlmask = indexof [iract_3, ligkeys] and indexof [iract_2, rec_atoms];
+	local mask = andE [indexof [iract(1), ['Hbond', 'Metal', 'Ionic', 'Covalent']],lrmask or rlmask];
+	local s_lim = select [iract(2), iract(3), lrmask] | mask;	// multi atom
+   	local s_rim = select [iract(3), iract(2), lrmask] | mask;	// for arene
+	local s_score = iract(4) | mask;
+	local s_frag_atoms = cat rAtoms oParent s_lim;
+	local sel_atom = diff [ligkeys, s_frag_atoms];
+
+	
+	//print fdata;
+	//return;
+
+	frags = dropfirst Chains[]; //re-assign fragments
+	local atom;
+	local frag_atoms = cat cAtoms frags;
+	local ring_atoms =[];
+	aSetSelected [s_lim,1];
+	for atom in s_lim loop // for atoms with strong interactions
+		if [aIn6Ring atom] == 1 then
+			rSetSelected [oParent atom, 1];
+			ring_atoms = cat [ring_atoms, atom];
+			local centroid = oCentroid [oParent atom];
+			local mol = mol_Create [ '', [ '', '', '', 1 ], 
+			[ '*', 1, " ", 'none', 1 ], 
+			[ 'LP', 0, 'sp', 0, 0, [ [] ], 0, 'DU', 0, centroid(1),centroid(2),centroid(3) ] ];
+			centroids = cat[centroids, cAtoms last Chains[]];
+			aSetSelected [atom, 0];
+		endif
+	endloop
+	
+	aSetSelected [centroids,1]; //select centroids
+	
+	local atoms = SelectedAtoms[];
+	local atoms_type = ph4_aType atoms;
+	local info = [atoms: atoms, atype: atoms_type];
+	i=1;
+
+	
+	//run ph4 editor
+	run '$MOE/svl/run/ph4_edit_2.svl';
+	local wkey = ph4_EditorWkeyList [];
+	WindowShow wkey;
+	WindowTrigger [wkey, [create_F:1024]];
+		loop 
+			chains = Chains[];
+			local [features] = cAtoms last droplast chains;
+ 			until notnull features
+		endloop
+
+	chains = Chains[];
+
+	[features] = cAtoms last droplast Chains[];
+	
+	local data = ph4_EditorGetData wkey;
+	local feat = [atoms: features, names: data.F.expr];
+	
+	local feat_name;
+	local feat_delete = [];
+	i=0;
+	for feat_name in feat.names loop
+		i=i+1;
+		if alltrue [feat.names == 'AtomQ'] then break;
+		elseif feat_name == 'AtomQ' then
+			feat_delete = cat [feat_delete,feat.atoms(i)];
+		endif
+	endloop
+	
+	oDestroy oParent oParent ring_atoms;
+	
+	aSetSelected [Atoms[],0]; //deselect all features
+	aSetSelected [feat_delete,1]; //select AtomQ features to be deleted
+	
+	local nvp = WindowValues wkey;
+	local mainlist = nvp.mainlist(1);
+	
+	loop
+		if  length mainlist == length feat.atoms then
+		nvp = WindowValues wkey;
+		mainlist = nvp.mainlist(1);
+		elseif length mainlist < length feat.atoms then
+		WindowTrigger [wkey, [button_delete:1024]];
+		break;
+		
+		endif
+	endloop
+
+	loop
+	[features] = cAtoms last droplast chains;
+
+	local nums;
+
+	if length features == 13 then
+		nums = [6,7,8,9,10,11,12,13];
+	elseif length features == 12 then
+		nums = [6,7,8,9,10,11,12];
+	elseif length features == 11 then
+		nums = [6,7,8,9,10,11];
+	elseif length features == 10 then
+		nums = [6,7,8,9,10];
+	elseif length features == 9 then
+		nums = [6,7,8,9];
+	elseif length features == 8 then
+		nums = [6,7,8];
+	elseif length features == 7 then
+		nums = [6,7];
+	elseif length features == 6 then
+		nums = [6];
+	endif
+
+	//print length features;
+
+	if length features > 5 then
+		WindowTrigger [wkey, [mainlist:nums]];
+		if length SelectedAtoms[] < length features then
+			WindowTrigger [wkey, [button_delete:1024]];
+		endif
+	endif
+	nvp = WindowValues wkey;
+	mainlist = nvp.mainlist(1);
+	if length features <= 5 then break;
+	endif
+	endloop
+	
+	data = ph4_EditorGetData wkey;
+	local [filename] = db_ReadFields[database_file, entry, 'filename'];
+	filename = token filename;
+	print filename;
+	fwrite_PH4 [filename, data, [header:1]];
+	//if length flist[[],'*.ph4'] == n then
+	//WindowTrigger [wkey, [button_delete:1024]];
+	WindowDestroy wkey;
+	
+	
+endloop	
+endfunction

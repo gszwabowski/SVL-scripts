@@ -1,0 +1,46 @@
+#svl
+//Commentary by Greg Szwabowski 12/4/2020
+//This function will allow you to identify the atom numbers for atoms
+//in functional groups of interest that possess symmetry.
+//ARGUMENTS
+//---------
+//num_groups: number of groups of atoms that are symmetrical
+//
+//CHANGELOG
+//---------
+//7/16/21: added atom_indices variable that is used to store the index
+//number for each atom and is printed to the SVL window for use with
+//the ligandrmsd_symm.svl ref_groups and pose_groups arguments.
+
+global function symm_groupselect [num_groups];
+local atom_indices = [];
+
+local i = 0;
+while i < num_groups loop
+	i = i+1;
+	aSetSelected [Atoms[], 0];
+	local chains = Chains[];
+	local [atoms] = cAtoms chains(1);
+	local mask = aElement atoms <> 'H';
+	atoms = atoms | mask;
+	//print length atoms;
+	local title = tok_cat ['Pick group',' ', totok i, ' ', 'atoms'];
+		aSetSelected [Atoms[], 0];
+        	local wkey = WindowCreate [
+        	name : 'AtomPrompt',
+		mode : 'pickNone',
+		location: 'MOE',
+		title : title,
+ 		Button: [
+                	name : 'button',
+                	text : 'OK'
+           		]   	
+		];
+		local v = WindowWait [wkey];
+		WindowDestroy wkey;
+	print indexof [SelectedAtoms[], atoms];
+	atom_indices = cat [atom_indices, [indexof [SelectedAtoms[], atoms]]];
+endloop
+
+print atom_indices;
+endfunction

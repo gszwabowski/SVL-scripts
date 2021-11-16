@@ -1,0 +1,81 @@
+//Commentary 7/1/21 GS
+//This script is used to calculate the mean interaction score of each set of fragments
+//used to annotate randomly generated pharmacophore model features. Each score is written
+//to the output.mdb database that is a result of random pharmacophore model generation.
+//
+//ARGUMENTS
+//----------
+//receptor: receptor model, should end in minrec.moe (receptor structure written to disk during MCSS)
+//mdb: output.mdb, database containing fragments used to annotate each pharmacophore model's features
+
+function prolig_Calculate;
+global function s_score_calc [receptor, mdb];
+local frag1_chain, frag2_chain, frag3_chain, frag4_chain, frag5_chain;
+local frag1_name, frag2_name, frag3_name, frag4_name, frag5_name;
+
+Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+
+Open receptor;
+
+local entries = db_Entries mdb;
+local entry;
+db_EnsureField [ mdb, 's_score', 'float'];
+//db_EnsureField [ mdb, 's_score_all', 'float'];
+
+for entry in entries loop
+	local [frag1] = db_ReadFields [mdb, entry, 'Fragment1_mol'];
+	local [frag2] = db_ReadFields [mdb, entry, 'Fragment2_mol'];
+	local [frag3] = db_ReadFields [mdb, entry, 'Fragment3_mol'];
+	local [frag4] = db_ReadFields [mdb, entry, 'Fragment4_mol'];
+	local [frag5] = db_ReadFields [mdb, entry, 'Fragment5_mol'];
+	
+	[frag1_chain, frag1_name] =db_CreateMolecule frag1;
+	[frag2_chain, frag2_name] =db_CreateMolecule frag2;
+	[frag3_chain, frag3_name] =db_CreateMolecule frag3;
+	[frag4_chain, frag4_name] =db_CreateMolecule frag4;
+	[frag5_chain, frag5_name] =db_CreateMolecule frag5;
+	
+	local chains = Chains[];
+	local [rec_atoms] = cAtoms chains(1); // get receptor atoms
+	local frags = dropfirst chains; // create subset of just fragments
+	local frag_chain;
+	local ligkeys = cat cAtoms frags;
+	local dummy_mask = aElement ligkeys <> 'LP';
+	ligkeys = ligkeys | dummy_mask;
+	//aSetSelected [ligkeys, 1];
+	local use_frags = [];
+	local sel_atoms = []; // empty vector for fragment atoms that are to be selected
+		
+	local itypes = ['Hbond', 'Metal', 'Ionic', 'Covalent', 'Arene', 'Distance'];
+		local iopt = [
+			emin_hb:	    minE[-0.1, 0.10],
+			emin_hpi:	    minE[-0.1, 0.10],
+			emin_ion:	    0.10,
+			distance_threshold: 4.5, //4.5 default
+			layoutrechb:	    1	// incl. rec-rec hbond in layout
+			];
+	
+	//from prolig2d.svl, calculates fragments with strong interactions
+	local iract = prolig_Calculate [itypes, ligkeys, rec_atoms, iopt];
+	aSetSelected [ligkeys, 1];
+	local [iract_2, iract_3] = [iract(2), iract(3)];
+	local lrmask = indexof [iract_2, ligkeys] and indexof [iract_3, rec_atoms];
+	local rlmask = indexof [iract_3, ligkeys] and indexof [iract_2, rec_atoms];
+	local mask = andE [indexof [iract(1), ['Hbond', 'Metal', 'Ionic', 'Covalent']],lrmask or rlmask];
+	//local arene_mask = andE [iract(1) == 'Arene', lrmask or rlmask];
+	//mask = mask or arene_mask;
+	local s_lim = select [iract(2), iract(3), lrmask] | mask;	// multi atom
+	local s_rim = select [iract(3), iract(2), lrmask] | mask;	// for arene
+	local s_score = iract(4) | mask;
+	local mean_score = (add s_score)/(length s_score);
+	//local mean_scoreall = (add iract(4)/(length iract(4)));
+	write ['Mean score: {}\n', (add s_score)/(length s_score)];
+
+	db_Write [mdb, entry, tagpoke[[],'s_score', mean_score]];
+	//db_Write [mdb, entry, tagpoke[[],'s_score_all', mean_scoreall]];
+	oDestroy frags;
+endloop
+
+write 'Done.\n';	
+Open mdb; 
+endfunction;
