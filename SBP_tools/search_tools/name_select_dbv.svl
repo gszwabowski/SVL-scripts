@@ -1,0 +1,25 @@
+//this function will select all entries in a database that
+//match a given vector of names. databse must have a field
+//titled 'name'.
+
+global function name_select_dbv [mdb, names];
+
+local name;
+local entries = db_Entries mdb;
+local entry;
+
+dbv_Open mdb;
+
+for name in names loop
+	//rint name;
+	name = token name;
+	for entry in entries loop
+		local [ent_name] = db_ReadFields [mdb, entry, 'name'];
+		ent_name = token ent_name;
+		if ent_name == name then
+			dbv_EntrySetSelected [mdb, entry, 1];
+		endif
+	endloop
+endloop
+
+endfunction

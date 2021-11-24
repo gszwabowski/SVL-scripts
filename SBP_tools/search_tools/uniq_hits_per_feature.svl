@@ -1,0 +1,19 @@
+//Commentary GLS 9/7/21
+//This script will allow you calculate the number of unique compounds
+//elucidated at a particular partial match feature number
+
+global function uniq_hits_per_feature [];
+
+local i;
+for i = 3, 7, 1 loop
+	local mdbs = flist[[], tok_cat['*', totok i, '.mdb']];
+	local mdb;
+	local name_vector = [];
+	for mdb in mdbs loop
+		local names = uniq db_ReadColumn [mdb, 'name'];
+		name_vector = cat [name_vector, names];
+	endloop
+	write ['{} features: {}\n', i, length uniq name_vector];
+endloop
+
+endfunction

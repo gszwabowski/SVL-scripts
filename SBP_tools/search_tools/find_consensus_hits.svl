@@ -1,0 +1,46 @@
+//mdbs: vector of database names
+
+global function find_consensus_hits [mdbs]
+
+local mdb;
+local names_cat = [];
+local vector_names = [];
+local i = 0;
+local x;
+
+//get the compound names from each mdb in mdbs (names),
+//create a concatenated vector for later name check (names_cat)
+for mdb in mdbs loop
+	i = inc i;
+	local names = uniq db_ReadColumn [mdb, 'name'];
+	names_cat = cat[names_cat, [names]];
+endloop
+
+local vector, vector2, name, name2;
+local same_count = 0;
+local same_names = [];
+
+
+//check other vectors and ensure that the compound name is in the other vectors
+for vector in names_cat loop
+	local drop_names_cat = diff[names_cat, [vector]];
+	print drop_names_cat;
+	for name in vector loop
+		for vector2 in drop_names_cat loop
+			for name2 in vector2 loop
+				if name === name2 then
+					print name;
+					same_count = inc same_count;
+				endif
+			endloop
+			if same_count == length drop_names_cat then
+				same_names = append [same_names, name];
+			endif
+		endloop
+	same_count = 0; //reset count prior to new namecheck
+	endloop
+endloop		
+
+return uniq same_names;
+
+endfunction

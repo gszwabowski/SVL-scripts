@@ -1,0 +1,36 @@
+global function uniq_hits_per_template [dir1, dir2, subset, features];
+//research updates 9-8-21.pptx slide 7
+//per each feature number, this script will determine the number of hit compounds
+//present in hit list 1 but not hit list 2 and vice versa.
+//ex. command: uniq_hits_per_template ['GPR101_4MQS', 'GPR101_5ZKC', 'gh', 3]
+local names1 = [];
+local names2 = [];
+
+cd dir1;
+cd subset;
+
+local mdbs = flist[[],tok_cat['*_',totok features, '.mdb']];
+local mdb;
+for mdb in mdbs loop
+	names1 = cat [names1, uniq db_ReadColumn [mdb, 'name']];
+endloop
+
+cd '../../';
+cd dir2;
+cd subset;
+mdbs = flist[[],tok_cat['*_',totok features, '.mdb']];
+for mdb in mdbs loop
+	names2 = cat [names2, uniq db_ReadColumn [mdb, 'name']];
+endloop
+
+cd '../../';
+
+write ['In dir1 but not dir2: {}\n', length diff[uniq names1, uniq names2]];
+write ['In dir2 but not dir1: {}\n', length diff[uniq names2, uniq names1]];
+//print length diff[uniq names1, uniq names2];
+//print length diff[uniq names2, uniq names1];
+
+return diff[uniq names1, uniq names2];
+
+endfunction
+

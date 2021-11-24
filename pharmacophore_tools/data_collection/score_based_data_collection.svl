@@ -1,3 +1,16 @@
+//Commentary by GLS 11/22/21
+//This script will calculate various interfeature distances/feature composition
+//for all pharmacophore models generated of a certain score type. The script
+//then creates a database titled "ph4_distances_composition.mdb' and imports 
+//distance and feature composition data into the new database.
+//
+//Prior to running the script, save and load ph4_feature_composition.svl
+//and ph4_feature_distance_calc.svl.
+//
+//ARGUMENTS
+//---------
+//score_type: token name of fragment subset folder {e.g. 'rec_ef')
+
 function feature_composition_db;
 function feat_dist_db_score_based;
 function db_ImportDB;
@@ -8,7 +21,8 @@ local files = flist[];
 local [mask] = fext[files] == '';
 local folders = files | mask;
 local folder;
-local receptor_structures = flist ['E:/OneDrive - The University of Memphis/SBP/receptor_structures', '*.moe'];
+local receptor_structures = flist ['$HOME/OneDrive - The University of Memphis/SBP/receptor_structures', '*.moe'];
+//local receptor_structures = flist ['E:/OneDrive - The University of Memphis/SBP/receptor_structures', '*.moe'];
 local i = 0;
 
 for folder in folders loop
