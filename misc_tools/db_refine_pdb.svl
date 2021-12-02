@@ -35,15 +35,32 @@ for entry in entries loop
 	local chains = Chains[];
 	local i;
 	local chain_lengths = [];
-	//determine chain lengths
+	//find chain lengths, then find chain name suffixed ".R". if ".R" not present,
+	//GPCR will be the longest chain.
 	for i = 1, length chains, 1 loop
 		local chain_length = length cat cResidues chains(i);
 		chain_lengths = cat [chain_lengths, chain_length];
 	endloop
-	
-	//GPCR will be the longest chain
-	local rmask = chain_lengths == max chain_lengths;
-	local rchain = chains | rmask;
+
+	local chain_names = cName chains;
+	local rmask = fext cName chains == 'R';
+	if anytrue rmask and add rmask > 1 then //if there's more than 1 .R chain
+		local rchain = chains | rmask;
+		local rchain_lengths = chain_lengths | rmask;
+		local length_mask = rchain_lengths == max rchain_lengths;
+		rchain = rchain | length_mask;
+	elseif anytrue rmask then //if there's only 1 .R chain
+		rchain = chains | rmask;
+	else //if there's no .R chain
+		rmask = chain_lengths == max chain_lengths;
+		rchain = chains | rmask;
+		if length rchain > 1 then
+			rchain = first rchain;
+		endif
+	endif
+	write ['Receptor chain: {}\n', cName rchain];
+	//aSetSelected [cAtoms rchain, 1];
+	//sleep 100;
 
 	//determine ligand chains
 	for chain in chains loop
