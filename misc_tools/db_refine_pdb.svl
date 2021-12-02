@@ -1,0 +1,135 @@
+//Commentary 12/1/21 GLS
+//
+//This script is used to refine each structure in a database containing structures
+//downloaded from the PDB. Most GPCR structures downloaded from the PDB typically
+//contain extraneous chains, solvent molecules, and ions that need to be removed.
+//For each entry in a database, this function first opens the structure in the 'mol' 
+//field and deletes protein chains that are shorter than the longest chain present
+//in the system (the receptor). Next, the Site Finder function is used to determine
+//a binding pocket (BP) centroid. If more than 1 non-amino acid (ligand/solvent/ion) residue
+//is present in the system, the mean distance of all atoms comprising the residue to the
+//BP centroid atom is calculated and the residue with the shortest mean distance to the
+//center of the binding pocket is kept. To ensure that ions/solvent atoms do not interfere
+//with this distance comparison, any residues comprised of only 1 atom are deleted.
+//Refined structures (containing only a GPCR structure and its orthosteric ligand) are
+//are then imported into the newly created 'mol_Refined' category in the database.
+//
+//ARGUMENTS
+//---------
+//mdb: database with a field containing structures you wish to refine.
+//mol_field: name of the field containing the structures.
+
+function Protonate3D;
+global function db_refine_pdb [mdb, mol_field];
+Close [force:1, viewreset:1, delgobj:1];
+local entries = db_Entries[mdb];
+local entry, mol, mol_chain, mol_name, chain;
+
+//ensure mdb has a mol field to import to
+db_EnsureField [mdb, 'mol_Refined', 'molecule'];
+
+for entry in entries loop
+	[mol] = db_ReadFields[mdb, entry, mol_field];
+	[mol_chain, mol_name] =db_CreateMolecule mol;
+	View[];
+	local chains = Chains[];
+	local i;
+	local chain_lengths = [];
+	//determine chain lengths
+	for i = 1, length chains, 1 loop
+		local chain_length = length cat cResidues chains(i);
+		chain_lengths = cat [chain_lengths, chain_length];
+	endloop
+	
+	//GPCR will be the longest chain
+	local rmask = chain_lengths == max chain_lengths;
+	local rchain = chains | rmask;
+
+	//determine ligand chains
+	for chain in chains loop
+		//get residue letters for each chain. '?' denotes ligand, ion, or solvent
+		local letter_vector = totok rLetter cat oChildren chain == '?';
+		//if no ?'s are present in letter_vector and the chain isn't the ligand chain, delete the chain
+		if add letter_vector == 0 and chain <> rchain then
+			oDestroy chain;
+		endif
+	endloop
+
+	// open sitefinder (from SBP script) (move this so structures with only 1 ligand residue don't use this code?)
+	local tcount = 0;
+	local tatoms = [];
+	loop
+		tcount = tcount + 1;
+		Open '$MOE/svl/run/sitefind.svl';
+		local wkey2 = WindowKeyList[];
+		if tcount = 1 then 
+			WindowTrigger [wkey2, [panel:'Apply']];
+		endif
+		
+		WindowTrigger [wkey2, [disp_aselect:1]];
+		sleep 0.5;
+		if notnull SelectedAtoms[] then 
+			break;
+		endif
+	endloop;
+	
+	sleep 1;
+	WindowDestroy wkey2;
+
+	local site_center = oCentroid SelectedAtoms[];
+	local site_dum = mol_Create [ 'BP Centroid', [ 'centroid', '', '', 1 ], // create a dummy atom representing the centroid of the BP
+			[ '*', 1, " ", 'none', 1 ], 
+			[ 'LP', 0, 'sp', 0, 0, [ [] ], 0, 'DU', 0, site_center(1),site_center(2),site_center(3) ] ];
+	aSetSelected [Atoms[], 0];
+	site_dum = cAtoms site_dum;
+
+	//create empty vectors for ligand distances, residues to delete
+	local dists = [];
+	local res_delete = [];
+
+	//find the non-receptor residue with the shortest distance to the binding pocket
+	local residues = droplast Residues[]; //don't want to consider dummy atom
+	local resmask = rType residues == 'none';
+	local lig_residues = residues | resmask;
+	local lig_res;
+
+
+	if length lig_residues > 1 then
+		for lig_res in lig_residues loop
+			local [res_atoms] = rAtoms lig_res;
+			aSetSelected [res_atoms,1];
+			sleep 0.5;
+			aSetSelected [res_atoms,0];
+			if length res_atoms == 1 then
+				res_delete = cat [res_delete, lig_res];
+				local avg_dist = 99999;
+			else
+				avg_dist = add aDist [res_atoms, site_dum] / length res_atoms;
+			endif
+			dists = cat [dists, avg_dist];
+		endloop
+
+		local dist_mask = dists <> min dists;
+		res_delete = cat[res_delete, lig_residues | dist_mask];
+		local res;
+		for res in res_delete loop
+			oDestroy res;
+		endloop
+	endif
+
+	//destroy site dummy atom prior to database addition
+	oDestroy oParent oParent site_dum;
+
+	//protonate 3D
+	local atoms = Atoms[];
+	Protonate3D [atoms,atoms,atoms,[],[],[pH: 7.4]];
+
+	//extract refined receptor, add to entry under the "mol_Refined" field
+	local mol_refined = mol_Extract Chains[];
+	db_Write[mdb, entry, [mol_Refined: mol_refined]];
+	Close [force:1, viewreset:1, delgobj:1];
+endloop
+
+write['Done.\n'];
+
+endfunction

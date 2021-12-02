@@ -1,0 +1,48 @@
+//Commentary by GLS 12/1/21
+//
+//This script is used to import PDB structures into a database,
+//provided there is a "PDB" field in the database that lists the
+//4-letter PDBid for each entry.
+//
+//ARGUMENTS
+//---------
+//mdb: database you wish to import structures to
+//pdb_field: token name of the field containing PDBid codes
+function rcsb_download;
+
+global function pdb_db_import [mdb, pdb_field];
+local entries = db_Entries[mdb];
+local entry;
+
+//ensure mdb has a mol field to import to
+db_EnsureField [mdb, 'mol', 'molecule'];
+
+//create temp directory to download pdb files into
+fmkdir ['temp'];
+
+//for each entry, use PDBid to download structure and import
+//into mol field
+for entry in entries loop
+	local [PDBid] = db_ReadFields [mdb, entry, pdb_field];
+	print PDBid;
+	PDBid = token PDBid;
+	print PDBid;
+	rcsb_download [PDBid, [directory: 'temp/', readPDB:1, showPanel:0]];
+	local mol = mol_Extract Chains[];
+	db_Write[mdb, entry, [mol: mol]];
+	Close [force:1, viewreset:1, delgobj:1];
+endloop
+
+//temp file cleanup
+local tempfiles = flist['temp'];
+local file;
+for file in tempfiles loop
+	fdelete file;
+endloop
+
+//delete temp folder
+frmdir 'temp';
+
+write['Done.\n'];
+
+endfunction
