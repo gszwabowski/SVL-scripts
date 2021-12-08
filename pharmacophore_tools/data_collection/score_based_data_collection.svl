@@ -21,7 +21,8 @@ local files = flist[];
 local [mask] = fext[files] == '';
 local folders = files | mask;
 local folder;
-local receptor_structures = flist ['$HOME/OneDrive - The University of Memphis/SBP/receptor_structures', '*.moe'];
+//local receptor_structures = flist ['$HOME/OneDrive - The University of Memphis/SBP/receptor_structures', '*.moe'];
+local receptor_structures = flist ['$HOME/OneDrive - The University of Memphis/SBP/receptor_structures/homology_models', '*.moe'];
 //local receptor_structures = flist ['E:/OneDrive - The University of Memphis/SBP/receptor_structures', '*.moe'];
 local i = 0;
 

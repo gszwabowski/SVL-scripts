@@ -139,5 +139,5 @@ endloop
 	print cat ['Don&Acc:', donacc_count];
 
 WindowDestroy ph4_EditorWkeyList [];
-Open 'ph4_feature_composition.mdb';
+//Open 'ph4_feature_composition.mdb';
 endfunction

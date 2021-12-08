@@ -14,11 +14,18 @@
 //Refined structures (containing only a GPCR structure and its orthosteric ligand) are
 //are then imported into the newly created 'mol_Refined' category in the database.
 //
+//Note: Visual inspection is still recommended after using this function on a
+//database. Once this function is used, use the database browser on the 'mol_refined'
+//field to visually inspect each structure.
+//
 //ARGUMENTS
 //---------
 //mdb: database with a field containing structures you wish to refine.
 //mol_field: name of the field containing the structures.
-
+//
+//CHANGELOG
+//---------
+//12/6/21: changed last condition for GPCR chain selection from max length to highest helical proportion.
 function Protonate3D;
 global function db_refine_pdb [mdb, mol_field];
 Close [force:1, viewreset:1, delgobj:1];
@@ -35,11 +42,19 @@ for entry in entries loop
 	local chains = Chains[];
 	local i;
 	local chain_lengths = [];
-	//find chain lengths, then find chain name suffixed ".R". if ".R" not present,
-	//GPCR will be the longest chain.
+	local helix_props = [];
+	//find chain lengths, then find chain name suffixed ".R". if ".R" chain is not present,
+	//use the chain with the highest proportion of helical residues. Else, GPCR will be the 
+	//longest chain.
 	for i = 1, length chains, 1 loop
 		local chain_length = length cat cResidues chains(i);
 		chain_lengths = cat [chain_lengths, chain_length];
+		if length cat oChildren chains(i) < 100 then //if the chain has less than 100 residues
+			local helix_prop = 0.00;
+		else
+			helix_prop = add(rActualSegment cat oChildren chains(i) == 'helix') / length cat oChildren chains(i);
+		endif
+		helix_props = cat [helix_props, helix_prop];
 	endloop
 
 	local chain_names = cName chains;
@@ -52,15 +67,29 @@ for entry in entries loop
 	elseif anytrue rmask then //if there's only 1 .R chain
 		rchain = chains | rmask;
 	else //if there's no .R chain
-		rmask = chain_lengths == max chain_lengths;
-		rchain = chains | rmask;
-		if length rchain > 1 then
-			rchain = first rchain;
-		endif
+		local hprop_mask = helix_props == max helix_props;
+		rchain = chains | hprop_mask;
+		//rmask = chain_lengths == max chain_lengths;
+		//rchain = chains | rmask;
+		//if length rchain > 1 then
+			//rchain = first rchain;
+		//endif
 	endif
 	write ['Receptor chain: {}\n', cName rchain];
-	//aSetSelected [cAtoms rchain, 1];
-	//sleep 100;
+	aSetHidden [cAtoms rchain, 1];
+	rSetRibbonMode [Residues[], 'tube'];
+	
+	//remove fusion partners
+	local [rchain_residues] = cResidues rchain;
+	local rUID_resmask = rUID rchain_residues < 900;
+	local rUID_fusionmask = rUID rchain_residues > 900;
+
+	local rchain_residues1 = rchain_residues | rUID_resmask;
+	local rchain_residues2 = rchain_residues | rUID_fusionmask;
+	
+	if max rUID rchain_residues1 < 500 and alltrue[rUID rchain_residues > 900] == 0 then //check numbering for cases where fusion partners are not numbered differently
+		oDestroy rchain_residues2;
+	endif
 
 	//determine ligand chains
 	for chain in chains loop
@@ -120,6 +149,9 @@ for entry in entries loop
 			if length res_atoms == 1 then
 				res_delete = cat [res_delete, lig_res];
 				local avg_dist = 99999;
+			elseif add aMass res_atoms < 100 then
+				res_delete = cat [res_delete, lig_res];
+				avg_dist = 99999;
 			else
 				avg_dist = add aDist [res_atoms, site_dum] / length res_atoms;
 			endif

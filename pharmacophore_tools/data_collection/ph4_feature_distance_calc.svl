@@ -99,7 +99,7 @@ print avg_maxcentr;
 print avg_mincentr;
 print avg_avgcentr;
 
-Open 'ph4_distances.mdb';
+//Open 'ph4_distances.mdb';
 write 'Done.\n';
 
 endfunction

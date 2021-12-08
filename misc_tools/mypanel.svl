@@ -1,0 +1,10 @@
+global function mypanel []
+    local wkey = WindowKeyList[];
+    WindowShow wkey;                // put up the window
+    local [values, trigger] = WindowWait wkey;    // wait for trigger
+
+        // when window triggers, window is taken down
+        // print the trigger and its value to the SVL Commands window
+
+    write ['Trigger is {}.  Value is {}.\n', trigger, values.(trigger)];
+endfunction
