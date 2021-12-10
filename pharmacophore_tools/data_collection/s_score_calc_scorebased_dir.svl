@@ -2,7 +2,7 @@
 //
 //This script will calculate interaction scores for MCSS fragments used to annotate
 //pharmacophore features, which are an output of the score-based pharmacophore script
-//('*_saved_fragments.moe'). Set your CWD to the directory containing multiple saved
+//('*_fragments.moe'). Set your CWD to the directory containing multiple saved
 //fragment files and run the command s_score_calc_scorebased_dir []. Scores will be
 //printed to the command window in the following order: dE(class), dE, dU(class), dU.
 

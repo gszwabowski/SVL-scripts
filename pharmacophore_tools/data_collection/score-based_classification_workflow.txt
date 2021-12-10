@@ -1,0 +1,39 @@
+Steps for score-based pharmacophore data collection for classification with SGD LR
+==================================================================================
+
+Distance and feature composition data collection
+------------------------------------------------
+1. Set your CWD to the directory containing subfolders for each receptor.
+	a. Each subfolder should contain subfolders containing the 4 generated
+	   .ph4 files for each fragment subset (gh, ef, moefrags, etc.)
+2. Save and load ph4_feature_composition.svl and ph4_feature_distance_calc.svl.
+3. Save and load score_based_data_collection.svl.
+	a. You may have to change the 
+4. Run the command 'score_based_data_collection [score_type]' where 'score_type'
+   is the name of the fragment subset you wish to collect data for ('ef', 'gh').
+	a. This command should be run for each fragment subset folder, 5 times
+	   if using the 5 fragment subsets originally studied.
+5. In each fragment subset subfolder, a database titled 'ph4_distances_composition.mdb'
+   will be created. Open this in MOE 2018.01 and copy all data except the 'ani', 'cat',
+   and 'aro' fields to an Excel spreadsheet.
+
+Fragment interaction score (s_score) data collection
+----------------------------------------------------
+1. Save and load s_score_calc_scorebased_dir.svl.
+2. Set your CWD to a directory containing subfolders for each fragment subset.
+	a. Each subfolder in this directory should contain the .moe files 
+	   representing the MCSS fragments used to create specific .ph4
+	   files for each fragment subset (suffixed '_fragments.moe')
+3. Run the command 's_score_calc_scorebased_dir []' and copy/paste the results
+   to your Excel spreadsheet in a new column titled 's_score'.
+
+Pharmacophore hit collection
+----------------------------
+1. Save and load feature_search_dir_7feats.svl.
+2. Set your CWD to a fragment subset folder containing .ph4 files.
+3. Run the command feature_search_dir_7feats [compound_db, mseq_field],
+   where 'compound_db' is the database you wish to search and 'mseq_field'
+   is the field in compound_db containing mseq numbers,
+4. Hit numbers can be found in 'ph4_searchlog.txt'. For a specific partial
+   match feature number, copy each pharmacophore's hit number to your Excel
+   spreadsheet in a new column titled 'Hits'.

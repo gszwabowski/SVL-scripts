@@ -10,6 +10,9 @@
 //ARGUMENTS
 //---------
 //score_type: token name of fragment subset folder {e.g. 'rec_ef')
+//receptor_dir: folders containing receptor structures
+// |-------> Note: receptor structure filenames must be in the same order
+//	           as the directories in your CWD!
 
 function feature_composition_db;
 function feat_dist_db_score_based;
@@ -22,8 +25,11 @@ local [mask] = fext[files] == '';
 local folders = files | mask;
 local folder;
 //local receptor_structures = flist ['$HOME/OneDrive - The University of Memphis/SBP/receptor_structures', '*.moe'];
-local receptor_structures = flist ['$HOME/OneDrive - The University of Memphis/SBP/receptor_structures/homology_models', '*.moe'];
+//local receptor_structures = flist ['$HOME/OneDrive - The University of Memphis/SBP/receptor_structures/homology_models', '*.moe'];
 //local receptor_structures = flist ['E:/OneDrive - The University of Memphis/SBP/receptor_structures', '*.moe'];
+
+//for GPR101
+local receptor_structures = flist ['E:/onedrive - the university of memphis/prestwick_library_gpr101/homology_model/final_models/', '*.moe'];
 local i = 0;
 
 for folder in folders loop
