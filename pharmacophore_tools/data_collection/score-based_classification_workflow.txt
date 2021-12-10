@@ -9,9 +9,12 @@ Distance and feature composition data collection
 2. Save and load ph4_feature_composition.svl and ph4_feature_distance_calc.svl.
 3. Save and load score_based_data_collection.svl.
 	a. You may have to change the 
-4. Run the command 'score_based_data_collection [score_type]' where 'score_type'
-   is the name of the fragment subset you wish to collect data for ('ef', 'gh').
-	a. This command should be run for each fragment subset folder, 5 times
+4. Run the command 'score_based_data_collection [score_type, receptor_dir]' where 
+   'score_type' is the name of the fragment subset you wish to collect data for
+   ('ef', 'gh') and 'receptor_dir' is a folder containing receptor structures.
+	a. Note: receptor structure filenames must be in the same order
+	   as the directories in your CWD!
+	b. This command should be run for each fragment subset folder, 5 times
 	   if using the 5 fragment subsets originally studied.
 5. In each fragment subset subfolder, a database titled 'ph4_distances_composition.mdb'
    will be created. Open this in MOE 2018.01 and copy all data except the 'ani', 'cat',
