@@ -5,8 +5,13 @@
 //=========
 //mdb: database you wish to renumber
 //method: 'mseq' or 'name'
+//fieldname: token name of mseq or name field
+//
+//Changelog
+//---------
+//1/12/22: added fieldname argument
 
-global function mseq_renum [mdb, method]
+global function mseq_renum [mdb, method, fieldname]
 
 db_EnsureField [mdb, 'mseq_renum', 'int'];
 
@@ -16,7 +21,7 @@ local entry;
 
 if method == 'mseq' then
 	for entry in entries loop
-		local mseq = db_ReadFields [mdb, entry, 'mseq'];
+		local mseq = db_ReadFields [mdb, entry, fieldname];
 		if entry == first entries then
 			db_Write [mdb, entry, tagpoke[[],'mseq_renum', mseq_counter]];
 			local prev_mseq = mseq;
@@ -30,7 +35,7 @@ if method == 'mseq' then
 	endloop
 elseif method == 'name' then
 	for entry in entries loop
-		local [name] = mseq = db_ReadFields [mdb, entry, 'name'];
+		local [name] = mseq = db_ReadFields [mdb, entry, fieldname];
 		print name;
 		name = token name;
 		if entry == first entries then
