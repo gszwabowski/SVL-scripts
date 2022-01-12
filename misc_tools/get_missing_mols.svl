@@ -7,13 +7,17 @@
 //mdb2: database containing conformations
 //=========
 //Output: molecules that are present in mdb1 but not mdb2 (based on
-//the 'name' field) will be selected in mdb1. These entries can then
+//the fieldname field) will be selected in mdb1. These entries can then
 //be saved as their own database from the mdb1 database viewer.
+//
+//Changelog
+//---------
+//1/11/22: Added fieldname argument, fieldname is no longer default field name
 
-global function get_missing_mols [mdb1, mdb2]
+global function get_missing_mols [mdb1, mdb2, fieldname]
 
-local names_1 = db_ReadColumn [mdb1, 'name'];
-local names_2 = uniq db_ReadColumn [mdb2, 'name'];
+local names_1 = db_ReadColumn [mdb1, fieldname];
+local names_2 = uniq db_ReadColumn [mdb2, fieldname];
 
 local diff_names = diff [names_1, names_2];
 
@@ -25,7 +29,7 @@ Open mdb1;
 for diff_name in diff_names loop
 	//print diff_name;
 	for entry in entries loop
-		local [entry_name] = db_ReadFields [mdb1, entry, 'name'];
+		local [entry_name] = db_ReadFields [mdb1, entry, fieldname];
 		//print entry_name;
 		if token entry_name == token diff_name then
 			dbv_EntrySetSelected [ mdb1, entry, 1 ]; 

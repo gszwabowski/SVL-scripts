@@ -5,8 +5,13 @@
 // ---------
 // dst_mdb: desired name of output database
 // src_mdb: database containing molecules with many entries per mseq
+// mseq_field: database field containing mseq numbers
+//
+// CHANGELOG
+// ---------
+// 1/5/22: added mseq_field argument for databases with 'mseq_renum' field
 
-global function get_uniq_mols [src_mdb, dst_mdb];
+global function get_uniq_mols [src_mdb, dst_mdb, mseq_field];
 local field_names, field_types;
 
 local entry, mseq, db_mseq;
@@ -19,11 +24,11 @@ while i < length field_names loop
 	db_EnsureField [dst_mdb, field_names(i), field_types(i)];;
 endloop 
 
-local mseqs = uniq db_ReadColumn [src_mdb, 'mseq'];
+local mseqs = uniq db_ReadColumn [src_mdb, mseq_field];
 local entries = db_Entries src_mdb;
 
 	for entry in entries loop
-		db_mseq = db_ReadFields [src_mdb, entry, 'mseq'];
+		db_mseq = db_ReadFields [src_mdb, entry, mseq_field];
 		print cat ['db_mseq:', db_mseq];
 		if isnull mseqs then 
 			break;
