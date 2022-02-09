@@ -51,4 +51,6 @@ elseif method == 'name' then
 	endloop
 endif
 
+write 'Done.\n';
+
 endfunction

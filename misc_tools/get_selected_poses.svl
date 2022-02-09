@@ -25,6 +25,11 @@ if notnull flist[[], pose_mdb] == 0 then
 	for i = 1, length field_names, 1 loop
 		db_EnsureField [pose_mdb, field_names(i), field_types(i)];
 	endloop
+else
+	//create fields from mdb in output_mdb
+	for i = 1, length field_names, 1 loop
+		db_EnsureField [pose_mdb, field_names(i), field_types(i)];
+	endloop
 endif
 
 //create field that denotes the source mdb of each entry
@@ -54,7 +59,7 @@ db_SetEnv [pose_mdb, '{S}dbvbrowse_Dock', 'score'];
 if notnull dbv_KeyList[] == 0 then
 	dbv_Open pose_mdb;
 //else if the open databases aren't pose_mdb, open pose_mdb
-elseif dbv_KeyList[] <> db_Open[pose_mdb, 'read-write'] then
+elseif anytrue dbv_KeyList[] <> db_Open[pose_mdb, 'read-write'] then
 	dbv_Open pose_mdb;
 endif
 

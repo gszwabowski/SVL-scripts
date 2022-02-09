@@ -1,0 +1,22 @@
+//Commentary by GLS 2/7/22
+//
+//This script allows a user to select sequence editor residues in the first
+//loaded chain based on rNumber/rPos values.
+//
+//Arguments
+//=========
+//resnums: a vector of integers representing the indexed positions of each residue you wish to select
+//	|
+//	|--> example: res_select [[82,85,86,89,165,249,252,253,256,275,279,283]]
+//	|
+//	|--> NOTE: values should be sequence editor column numbers, NOT rUID values.
+ 
+global function res_select [resnums]
+local x;
+local residues = cat oChildren first Chains[];
+rSetSelected[residues, 0]; //clear selected residues prior to residue selection
+for x in resnums loop
+	rSetSelected[residues(x), 1];
+endloop
+
+endfunction;

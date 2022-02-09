@@ -1,7 +1,7 @@
 #svl
 //Commentary 12/9/21 GLS
-//This function is used to search a compound database with a 7 feature pharmacophore
-//model at 3,4,5,6, and 7 features.
+//This function is used to search a compound database with all 7 feature pharmacophore
+//models present in a directory at 3,4,5,6, and 7 features.
 //
 //ARGUMENTS
 //=========
