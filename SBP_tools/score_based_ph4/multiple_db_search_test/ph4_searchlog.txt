@@ -1,7 +1,0 @@
-
-3feat_hits : 9269
-4feat_hits : 4917
-5feat_hits : 218
-6feat_hits : 3
-7feat_hits : 0
-[ 'dU(class)_3', 4678, 4678, 'dU(class)_4', 2513, 'dU(class)_5', 126, 'dU(class)_6', 3, 'dU(class)_7', 0 ]
