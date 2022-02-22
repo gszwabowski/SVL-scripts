@@ -1,0 +1,135 @@
+#svl
+
+function db_ImportDB;
+function pharmcount;
+global function feature_hitlist_aggregate_dir_unique [receptor];
+
+local mdb, hit, mseq, entry, feature_number;
+
+local feature_numbers = [3,4,5,6,7];
+local all_common_hits_mdb = db_Open ['common_hits.mdb', 'create'];
+
+for feature_number in feature_numbers loop;
+	local mdb_key = db_Open [tok_cat[totok feature_number, 'feature_hitlist_aggregated.mdb'], 'create'];
+	local common_hits_mdb = db_Open [tok_cat[totok feature_number, 'feature_common_hits.mdb'], 'create'];
+	//db_Open ['feature_hitlist_aggregated_4.mdb', 'create'];
+	//db_Open ['feature_hitlist_aggregated_5.mdb', 'create'];
+	//db_Open ['feature_hitlist_aggregated_6.mdb', 'create'];
+	//db_Open ['feature_hitlist_aggregated_7.mdb', 'create'];
+
+	local mdbs = flist [[], tok_cat ['*_', totok feature_number, '.mdb']];
+	//local feat_3 = flist [[],'*_3.mdb'];
+	//local feat_4 = flist [[],'*_4.mdb'];
+	//local feat_5 = flist [[],'*_5.mdb'];
+	//local feat_6 = flist [[],'*_6.mdb'];
+	//local feat_7 = flist [[],'*_7.mdb'];
+
+	local i = 1;
+	local hit_count = 0;
+	local hit_mseq_list = [];
+	local notempty_mdbs = 0;
+
+	for mdb in mdbs loop
+		if notnull mdb then
+			db_ImportDB [mdb_key, mdb, [], []];
+		endif
+
+		if i == 1 then
+			local de_class_hits = uniq db_ReadColumn [mdb, 'mseq'];
+			//print cat ['de_class:', uniq de_class_hits];
+			if length de_class_hits > 0 then
+				notempty_mdbs = notempty_mdbs + 1;
+			endif
+		elseif i == 2 then
+			local de_hits = uniq db_ReadColumn [mdb, 'mseq'];
+			//print cat ['de:', uniq de_hits];
+			if length de_hits > 0 then
+				notempty_mdbs = notempty_mdbs + 1;
+			endif
+		elseif i == 3 then
+			local du_class_hits = uniq db_ReadColumn [mdb, 'mseq'];
+			//print cat ['du_class:', uniq du_class_hits];
+			if length du_class_hits > 0 then
+				notempty_mdbs = notempty_mdbs + 1;
+			endif
+		elseif i == 4 then
+			local du_hits = uniq db_ReadColumn [mdb, 'mseq'];
+			//print cat ['du:', uniq du_hits];
+			if length du_hits > 0 then
+				notempty_mdbs = notempty_mdbs + 1;
+			endif
+		endif
+	
+		i = i+1;
+	endloop	
+		
+		local hits = cat [de_class_hits, de_hits, du_class_hits, du_hits];
+		//print cat ['notempty:', notempty_mdbs];
+	
+	for hit in uniq hits loop
+		if notnull join [hit, de_class_hits] then
+			hit_count = hit_count + 1;
+		endif
+		if notnull join [hit, de_hits] then
+			hit_count = hit_count + 1;
+		endif
+		if notnull join [hit, du_class_hits] then
+			hit_count = hit_count + 1;
+		endif
+		if notnull join [hit, du_hits] then
+			hit_count = hit_count + 1;
+		endif
+	
+		if hit_count == notempty_mdbs then
+			hit_mseq_list = cat [hit_mseq_list, hit];
+		endif
+	
+		hit_count = 0;
+	endloop
+	
+	//print hit_mseq_list;
+	print cat [tok_cat ['common hits_', totok feature_number, ':'], length hit_mseq_list];	
+
+	local entries = db_Entries mdb_key;
+
+	for mseq in hit_mseq_list loop
+		for entry in entries loop
+			if db_ReadFields [mdb_key, entry, 'mseq'] == mseq then
+				db_ImportDB [common_hits_mdb, mdb_key, [], [], [], [start_entry: indexof[entry, entries], end_entry: indexof[entry, entries]]];
+				break;
+			endif
+		endloop
+	endloop
+	
+	
+	hit_mseq_list = [];
+endloop
+
+local feat_3 = uniq db_ReadColumn ['3feature_common_hits.mdb', 'mseq'];
+local feat_4 = uniq db_ReadColumn ['4feature_common_hits.mdb', 'mseq'];
+local feat_5 = uniq db_ReadColumn ['5feature_common_hits.mdb', 'mseq'];
+local feat_6 = uniq db_ReadColumn ['6feature_common_hits.mdb', 'mseq'];
+local feat_7 = uniq db_ReadColumn ['7feature_common_hits.mdb', 'mseq'];
+
+hit_mseq_list = uniq cat [feat_3, feat_4, feat_5, feat_6, feat_7];
+
+print cat['hits:', length hit_mseq_list];
+
+local mdb_key2 = '$HOME/OneDrive - The University of Memphis/SBP/score_based_ph4/pbd_conf10_updated_uniq.mdb';
+entries = db_Entries mdb_key2;
+
+for mseq in hit_mseq_list loop
+	for entry in entries loop
+		if db_ReadFields [mdb_key2, entry, 'mseq'] == mseq then
+			db_ImportDB [all_common_hits_mdb, mdb_key2, [], [], [], [start_entry: indexof[entry, entries], end_entry: indexof[entry, entries]]];
+			break;
+		endif
+	endloop
+endloop
+	
+
+pharmcount ['common_hits.mdb', receptor, 1,2,3,4,5];
+write 'Done.\n';
+
+endfunction
+

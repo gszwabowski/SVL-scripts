@@ -1,0 +1,36 @@
+#svl
+function scorebased_ph4gen_5feats_capped;
+function scorebased_ph4gen_6feats_capped;
+function scorebased_ph4gen_capped;
+function scorebased_ph4gen_capped_backward;
+function scorebased_ph4gen_capped_exclvol;
+function scorebased_ph4gen_capped_exclvol_randomdist;
+function scorebased_ph4gen_capped_backwards_exclvol;
+function scorebased_ph4gen_capped_randomdist;
+global function run_SBP_dir[];
+
+local name;
+local rec_names;
+
+if length flist[] == 9 then
+	rec_names = last droplast flist[]; // OG set
+else 
+	rec_names = flist[]; // Set 2
+endif
+
+rec_names = get[rec_names, [11,12,13]];
+
+for name in rec_names loop
+	print name;
+	cd name;
+	if name == 'Beta2' then
+		scorebased_ph4gen_capped_randomdist ["Beta 2"];
+	else
+		scorebased_ph4gen_capped_randomdist [string name];
+	endif
+	cd '..';
+endloop
+
+Warning 'Done, click OK.';
+
+endfunction

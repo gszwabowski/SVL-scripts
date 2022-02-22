@@ -1,0 +1,111 @@
+#svl
+function ph4_Search;
+global function zinc_search_subset []
+
+local feat_nums = [3,4,5];
+local features;
+
+local zinc_mdbs = flist ['/home/gszwbwsk/score_based_ph4/zinc_import_renum/mdb_copies'];
+local mdb;
+local total_hits = [];
+
+local i = 0;
+
+local files = flist [[], '*.ph4'];
+local ph4;
+
+for features in feat_nums loop
+	for ph4 in files loop
+		local ph4_hits = 0;
+		print ph4;
+		local score_type = fbase ph4;
+		for mdb in zinc_mdbs loop
+			logfile tok_cat['log1.txt'];
+			i = i+1;
+			ph4_Search [mdb, ph4, 
+					[
+					abspos                : 0,
+					action                : 0,
+					descexpr              : '',
+					esel                  : 0,
+					matchsize             : features,
+					maxconfhits           : 0,
+					maxmolhits            : 0,
+					molfield              : 'mol',
+					mseqfield	      :'mseq_renum',
+					o_molfield            : 'mol',
+					o_mseqfield           : 'mseq',
+					o_rmsdxfield          : 'rmsdx',
+					o_rscore_colfield     : 'rscore[F#]',
+					o_rscore_sumfield     : 'rscore',
+					out_append            : 0,
+					out_dbfile            : tok_cat [score_type, '_', totok features, '_', totok i, '.mdb'],
+					out_dbv               : 0,
+					out_type_molecules    : 1,
+					sortby                : 'rmsdx',
+					use_mname             : 0,
+					use_mseqfield         : 1,
+					use_o_fileIdxField    : 0,
+					use_o_fileNameField   : 0,
+					use_o_hitmapfield     : 0,
+					use_o_hitmapfieldC    : 0,
+					use_o_hitsizefield    : 0,
+					use_o_hitsizefieldC   : 0,
+					use_o_molfield        : 1,
+					use_o_mseqfield       : 1,
+					use_o_rmsdfield       : 0,
+					use_o_rmsdxfield      : 1,
+					use_o_rowfield        : 0,
+					use_o_rscore_colfield : 1,
+					use_o_rscore_sumfield : 1,
+					use_o_rscore_vecfield : 0,
+					use_out_dbfile        : 1,
+					usepsilo              : 0
+				]
+		];
+
+			logfile 0;
+			logfile[];
+
+			//obtain hit molecules from log file
+			local hitline = last droplast droplast freadb ['log1.txt', 'line', INT_MAX];
+			local ws = wordsplit [hitline, " "];
+			local hits1 = ws(3);
+			hits1 = atoi token hits1;
+			ph4_hits = ph4_hits + hits1;
+		endloop
+		total_hits = cat [total_hits, ph4_hits]; // store ph4 hits to write to logfile 
+		i = 0;
+		write ['{} : {}\n', 'ph4 hits:' , ph4_hits];
+	endloop
+
+endloop
+
+
+	logfile [tok_cat[score_type, '_searchlog.txt']];
+
+	write ['Hits (3 features):\n'];
+	write ['{} : {}\n', 'dE(class)' ,total_hits(1)];
+	write ['{} : {}\n', 'dE' ,total_hits(2)];
+	write ['{} : {}\n', 'dU(class)' ,total_hits(3)];
+	write ['{} : {}\n\n', 'dU' ,total_hits(4)];
+	
+	write ['Hits (4 features):\n'];
+	write ['{} : {}\n', 'dE(class)' ,total_hits(5)];
+	write ['{} : {}\n', 'dE' ,total_hits(6)];
+	write ['{} : {}\n', 'dU(class)' ,total_hits(7)];
+	write ['{} : {}\n\n', 'dU' ,total_hits(8)];
+	
+	write ['Hits (5 features):\n'];
+	write ['{} : {}\n', 'dE(class)' ,total_hits(9)];
+	write ['{} : {}\n', 'dE' ,total_hits(10)];
+	write ['{} : {}\n', 'dU(class)' ,total_hits(11)];
+	write ['{} : {}\n\n', 'dU' ,total_hits(12)];
+
+	logfile[];
+
+	total_hits = []; // reset total hit counter
+
+write 'Done.\n';
+
+endfunction

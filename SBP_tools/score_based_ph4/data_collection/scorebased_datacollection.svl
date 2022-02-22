@@ -1,0 +1,307 @@
+//Commentary by GLS 2/21/22
+//
+//This script is used to extract the information necessary for pharmacophore
+//model classification from score-based pharmacophore models. For each
+//pharmacophore model in a directory, the following attributes are calculated:
+//	+ Max/Min/Mean distances between pharmacophore features
+//	+ Max/Min/Mean distances pharmacophore features and binding site centroid
+//	+ Fragment-receptor interaction scores for the set of fragments used to annotate
+//	  features in the pharmacophore model
+//	+ Counts for each feature type (Hyd, Don, Acc, etc.) comprising the model
+//	+ Feature type proportions (x / 7 features are of Type Y)
+//
+//Once calculations are complete, attributes for pharmacophore models are stored
+//on an entry-by-entry basis in a database titled 'ph4_data.mdb'. The 'match_features'
+//and 'Hits' fields are left empty for each entry and will need to be filled in manually.
+//
+//COMMAND
+//=======
+//scorebased_datacollection [rec_name, receptor]
+//
+//ARGUMENTS
+//=========
+//rec_name: The name of your target, entered as a token ('GPR37')
+//receptor: receptor structure file
+
+function ph4_EditorWkeyList;
+function ph4_EditorGetData;
+function prolig_Calculate;
+
+//CALCULATE DISTANCES BETWEEN FEATURES=========================================
+local function feat_dist_calc [receptor, mdb]
+
+write 'Calculating feature distances...\n';
+Open receptor;
+local ph4;
+local ph4_files = flist [[],'*.ph4'];
+
+// open sitefinder
+loop
+	Open '$MOE/svl/run/sitefind.svl';
+	local wkey2 = WindowKeyList[];
+	WindowTrigger [wkey2, [panel:'Apply']];
+	WindowTrigger [wkey2, [disp_aselect:1]];
+	sleep 0.2;
+	if notnull SelectedAtoms[] then break;
+	endif
+endloop;
+
+	sleep 5;
+	WindowDestroy wkey2;
+	local site_center = oCentroid SelectedAtoms[];
+	local site_dum = mol_Create [ '', [ '', '', '', 1 ], 
+			[ '*', 1, " ", 'none', 1 ], 
+			[ 'LP', 0, 'sp', 0, 0, [ [] ], 0, 'DU', 0, site_center(1),site_center(2),site_center(3) ] ];
+	aSetSelected [SelectedAtoms[], 0];
+	site_dum = cAtoms site_dum;
+
+local entry;
+
+for ph4 in ph4_files loop
+	Open ph4;
+	local wkey = ph4_EditorWkeyList [];
+	local [fatoms] = cAtoms last droplast Chains[];
+	local mtx = aDist [tr fatoms, fatoms];
+	mtx = cat mtx;
+	mtx = pack mtx;
+	local max = max mtx;
+	local min = min mtx;
+	local mean = (add mtx)/(length mtx);
+	local mtx2 = aDist [site_dum, fatoms];
+	local mean_2 = (add mtx2)/(length mtx2);
+	local min_2 = first sort mtx2;
+	local max_2 = last sort mtx2;
+
+	local value = [
+		score_type: swrite ['{G}', fbase ph4], 
+		max_feat: max, 
+		min_feat: min, 
+		avg_feat: mean, 
+		max_centr: max_2, 
+		min_centr: min_2, 
+		avg_centr: mean_2];
+	
+	db_Write [mdb, 0, value];
+	sleep 2;
+	WindowDestroy wkey;
+endloop
+
+write 'Done calculating feature distances.\n';
+
+endfunction
+//==============================================================================
+//CALCULATE FEATURE COMPOSITION//
+local function featcomp_calc [receptor_name, mdb];
+local ph4, feature, feat_name, entry;
+local ph4s = flist[[], '*.ph4'];
+local hyd_count = 0;
+local don_count = 0;
+local acc_count = 0;
+local donhyd_count = 0;
+local catdon_count = 0;
+local hydaro_count = 0;
+local aniacc_count = 0;
+local donacc_count = 0;
+local i = 1;
+local feat_types = [
+			'Hyd', 
+			'Don', 
+			'Acc', 
+			'Don|Hyd',
+			'Cat&Don',
+			'Hyd|Aro',
+			'Ani&Acc',
+			'Don&Acc'
+		    ];
+
+local entry_count = 0;
+local entries = db_Entries mdb;
+
+write 'Calculating feature compositions...\n';
+
+for ph4 in ph4s loop
+	Open ph4;
+	local data = ph4_EditorGetData first ph4_EditorWkeyList [];
+	local features = data.F.expr;
+	for feat_name in feat_types loop
+		local tf = feat_name == features;
+		tf = add tf;
+		if feat_name == 'Hyd' then
+			hyd_count = hyd_count + tf;
+		elseif feat_name == 'Don' then
+			don_count = don_count + tf;
+		elseif feat_name == 'Acc' then
+			acc_count = acc_count + tf;
+		elseif feat_name == 'Don|Hyd' then
+			donhyd_count = donhyd_count + tf;
+		elseif feat_name == 'Cat&Don' then
+			catdon_count = catdon_count + tf;
+		elseif feat_name == 'Hyd|Aro' then
+			hydaro_count = hydaro_count + tf;
+		elseif feat_name == 'Ani&Acc' then
+			aniacc_count = aniacc_count + tf;
+		else 
+			donacc_count = donacc_count + tf;
+		endif
+
+		i = inc i;
+		tf = 0;
+	endloop
+
+	local feat_count = hyd_count + don_count + acc_count + donhyd_count + catdon_count + hydaro_count + aniacc_count + donacc_count;
+
+	entry_count = inc entry_count;
+	db_Write [mdb, entries(entry_count), tagpoke[[],'hyd', hyd_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'don', don_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'acc', acc_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'donhyd', donhyd_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'catdon', catdon_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'hydaro', hydaro_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'aniacc', aniacc_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'donacc', donacc_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'features', feat_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'hyd_prop', hyd_count/feat_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'don_prop', don_count/feat_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'acc_prop', acc_count/feat_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'donhyd_prop', donhyd_count/feat_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'catdon_prop', catdon_count/feat_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'hydaro_prop', hydaro_count/feat_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'aniacc_prop', aniacc_count/feat_count]];
+	db_Write [mdb, entries(entry_count), tagpoke[[],'donacc_prop', donacc_count/feat_count]];
+
+	if anytrue [[hyd_count,don_count,acc_count,donhyd_count,catdon_count,hydaro_count,aniacc_count,donacc_count] == feat_count] then
+		db_Write [mdb, entries(entry_count), tagpoke[[],'all_same', 1]];
+	else
+		db_Write [mdb, entries(entry_count), tagpoke[[],'all_same', 0]];
+	endif
+
+	sleep 0.5;
+	WindowDestroy last WindowKeyList[];
+
+	hyd_count=0; 
+	don_count=0;
+	acc_count=0;
+	donhyd_count=0;
+	catdon_count=0;
+	hydaro_count=0;
+	aniacc_count=0;
+	donacc_count=0;
+	
+endloop
+
+WindowDestroy ph4_EditorWkeyList [];
+write 'Done calculating feature compositions.\n';
+endfunction
+//==============================================================================
+//CALCULATE S_SCORE//
+
+local function s_score_calc [mdb]
+local frag1_chain, frag2_chain, frag3_chain, frag4_chain, frag5_chain;
+local frag1_name, frag2_name, frag3_name, frag4_name, frag5_name;
+local fragfiles = flist[[], '*_fragments.moe'];
+local fragfile;
+local entries = db_Entries mdb;
+local i = 0;
+
+write 'Calculating s_scores...\n';
+
+for fragfile in fragfiles loop
+	Close [force:1, viewreset:1, delgobj:1];  // close any open structures;
+	Open fragfile;
+	local chains = Chains[];
+	local [rec_atoms] = cAtoms chains(1); // get receptor atoms
+	local frags = dropfirst chains; // create subset of just fragments
+	local frag_chain;
+	local ligkeys = cat cAtoms frags;
+	local dummy_mask = aElement ligkeys <> 'LP';
+	ligkeys = ligkeys | dummy_mask;
+	local use_frags = [];
+	local sel_atoms = []; // empty vector for fragment atoms that are to be selected
+		
+	local itypes = ['Hbond', 'Metal', 'Ionic', 'Covalent', 'Arene', 'Distance'];
+		local iopt = [
+			emin_hb:	    minE[-0.1, 0.10],
+			emin_hpi:	    minE[-0.1, 0.10],
+			emin_ion:	    0.10,
+			distance_threshold: 4.5, //4.5 default
+			layoutrechb:	    1	// incl. rec-rec hbond in layout
+			];
+	
+	//from prolig2d.svl, calculates fragments with strong interactions
+	local iract = prolig_Calculate [itypes, ligkeys, rec_atoms, iopt];
+	aSetSelected [ligkeys, 1];
+	local [iract_2, iract_3] = [iract(2), iract(3)];
+	local lrmask = indexof [iract_2, ligkeys] and indexof [iract_3, rec_atoms];
+	local rlmask = indexof [iract_3, ligkeys] and indexof [iract_2, rec_atoms];
+	local mask = andE [indexof [iract(1), ['Hbond', 'Metal', 'Ionic', 'Covalent']],lrmask or rlmask];
+	local s_lim = select [iract(2), iract(3), lrmask] | mask;	// multi atom
+	local s_rim = select [iract(3), iract(2), lrmask] | mask;	// for arene
+	local s_score = iract(4) | mask;
+	local mean_score = (add s_score)/(length s_score);
+	
+	//write s_score to mdb
+	i = inc i;
+	db_Write [mdb, entries(i), tagpoke[[],'s_score', mean_score]];
+endloop
+
+write 'Done calculating s_scores.\n';	
+ 
+endfunction
+//==============================================================================
+//GLOBAL FUNCTION//
+
+global function scorebased_datacollection [rec_name, receptor]
+Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+
+//create database that ph4 data will be filled in to
+local mdb_key = db_Open ['ph4_data.mdb', 'create'];
+
+//ensure fields for data to be collected in ph4_data.mdb
+db_EnsureField [mdb_key, 'Receptor', 'char' ];
+db_EnsureField [mdb_key, 'subset', 'char' ];
+db_EnsureField [mdb_key, 'match_features', 'int' ];
+db_EnsureField [mdb_key, 'score_type', 'char' ];
+db_EnsureField [mdb_key, 's_score', 'float' ];
+db_EnsureField [mdb_key, 'Hits', 'int' ];
+db_EnsureField [mdb_key, 'max_feat', 'float' ];
+db_EnsureField [mdb_key, 'min_feat', 'float' ];
+db_EnsureField [mdb_key, 'avg_feat', 'float' ];
+db_EnsureField [mdb_key, 'max_centr', 'float' ];
+db_EnsureField [mdb_key, 'min_centr', 'float' ];
+db_EnsureField [mdb_key, 'avg_centr', 'float' ];
+db_EnsureField [mdb_key, 'hyd', 'int' ];
+db_EnsureField [mdb_key, 'don', 'int' ];
+db_EnsureField [mdb_key, 'acc', 'int' ];
+db_EnsureField [mdb_key, 'donhyd', 'int' ];
+db_EnsureField [mdb_key, 'catdon', 'int' ];
+db_EnsureField [mdb_key, 'hydaro', 'int' ];
+db_EnsureField [mdb_key, 'aniacc', 'int' ];
+db_EnsureField [mdb_key, 'donacc', 'int' ];
+db_EnsureField [mdb_key, 'features', 'int' ];
+db_EnsureField [mdb_key, 'all_same', 'int' ];
+db_EnsureField [mdb_key, 'hyd_prop', 'float' ];
+db_EnsureField [mdb_key, 'don_prop', 'float' ];
+db_EnsureField [mdb_key, 'acc_prop', 'float' ];
+db_EnsureField [mdb_key, 'donhyd_prop', 'float' ];
+db_EnsureField [mdb_key, 'catdon_prop', 'float' ];
+db_EnsureField [mdb_key, 'hydaro_prop', 'float' ];
+db_EnsureField [mdb_key, 'aniacc_prop', 'float' ];
+db_EnsureField [mdb_key, 'donacc_prop', 'float' ];
+
+Open 'ph4_data.mdb';
+
+feat_dist_calc [receptor, mdb_key];
+s_score_calc [mdb_key];
+featcomp_calc[receptor, mdb_key];
+
+local entries = db_Entries mdb_key;
+local entry;
+
+for entry in entries loop
+	db_Write [mdb_key, entry, tagpoke[[],'subset', string ftail cd []]];
+	db_Write [mdb_key, entry, tagpoke[[],'Receptor', string rec_name]];
+endloop
+
+write 'Done.\n';
+
+endfunction

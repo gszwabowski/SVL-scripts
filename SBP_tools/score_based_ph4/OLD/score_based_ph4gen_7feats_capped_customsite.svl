@@ -1,0 +1,927 @@
+#svl
+function ph4_Search;
+function Close;
+function Open;
+function prolig_Calculate;
+function pro_Contacts;
+function db_ImportASCII;
+function ph4_aType;
+function ph4_EditorWkeyList;
+function ph4_EditorGetData;
+function fwrite_PH4;
+function QuaSAR_DescriptorMDB;
+function feature_search_dir_7feats;
+function pharmacount_dir;
+
+///////////////////PHARMACOPHORE GENERATION////////////////////////
+	local function SBP_7feats [receptor, database_file, sortfield, residue_numbers]
+	//receptor is _minrec.moe, database_file is output.mdb, sortfield is scoring type, max_i is number of fragments to bring in
+	local features_length = 0;
+	local max_i = 0; //change starting fragments, default = 0
+
+	QuaSAR_DescriptorMDB [database_file, 'mol' , 'ASA_H'];
+
+	Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+	Open receptor;
+
+	logfile tok_cat [receptor, '_', sortfield, '.txt'];
+	local uid_numbers = rUID Residues[];
+	local BP_residues = get [Residues[], indicesof [residue_numbers, uid_numbers]];
+	aSetSelected [oChildren BP_residues, 1];
+
+
+		local site_center = oCentroid SelectedAtoms[];
+		local site_dum = mol_Create [ 'BP Centroid', [ 'centroid', '', '', 1 ], // create a dummy atom representing the centroid of the BP
+				[ '*', 1, " ", 'none', 1 ], 
+				[ 'LP', 0, 'sp', 0, 0, [ [] ], 0, 'DU', 0, site_center(1),site_center(2),site_center(3) ] ];
+		aSetSelected [Atoms[], 0];
+		site_dum = cAtoms site_dum;
+		
+		//BP Centroid has been created
+
+	while features_length < 7 loop // change minimum feature number
+		max_i = max_i + 1;
+		local entry_key, entry, x;
+		local mdb_key = db_Open [database_file, 'read-write']; //open database with fragments
+		
+		//if sortfield == 'dE(class)' then  
+			//db_Sort [mdb_key, [sortfield, 'dE'], [0,0]];
+		//elseif sortfield == 'dE(class)' then  
+			//db_Sort [mdb_key, [sortfield, 'dU'], [0,0]];
+		//else
+			//db_Sort [mdb_key, sortfield, 0]; //sort field by ascending
+		//endif
+
+		db_Sort [mdb_key, [sortfield, 'ASA_H'], [0,1]]; //sort fields by score (ascending) then ASA_H (descending)
+		local entries = db_Entries database_file;
+		local scores = [];
+		local centroids = [];
+		local dummies = [];
+		local i=0;
+		for entry in entries while i < max_i loop // loop creates max_i number of fragments
+			local [ligand] =db_ReadFields [mdb_key, entry,'mol']; //get structure from fieldname
+			local [ligand_chain, ligand_name] =db_CreateMolecule ligand;
+			local centroid = oCentroid ligand_chain;
+			local dum = mol_Create [ '', [ 'frag. centroid', '', '', 1 ], // create a centroid dummy atom for each fragment
+				[ '*', 1, " ", 'none', 1 ], 
+				[ 'LP', 0, 'sp', 0, 0, [ [] ], 0, 'DU', 0, centroid(1),centroid(2),centroid(3) ] ];
+			scores = append[scores, db_ReadFields [mdb_key, entry, sortfield]];
+			dummies = cat [dummies, cAtoms dum];
+			i = i+1;
+		
+		endloop
+		
+		//frag dummies have been created
+		
+		aSetSelected [dummies,1];
+		local matrix = aDist [tr dummies, dummies];
+		local matrix2 = aDist [site_dum, dummies]; // distance matrix with distance from BP centroid to fragments
+		i=0;
+		local cnums = cNumber oParent oParent dummies;
+		local chains = Chains[];
+		local dummydist;
+		local frag_delete = [];
+		local dum_delete = [];
+		local scores2 = scores; 
+
+
+		// FRAGMENT TO CENTROID CHECK
+		for dummydist in matrix2 loop // find fragments that are far (>10 A) from the center of the binding site
+			i=i+1;
+			local fnum = cNumber chains(cnums(i)-1);
+			if dummydist > 10 and scores(i) == 0 and freq [0, scores2] > 1 then // if the dummy atom is 10 Ang. from the BP, delete it and its corresponding dummy atom
+				//print cat['dummydist:', dummydist];
+				oDestroy [cAtoms chains(cnums(i)-1)];
+				oDestroy [cAtoms chains(cnums(i))];
+				scores2 = dropfirst scores2; // drop 0 score
+				write ['Deleted {} because of distance ({} Å) from centroid.\n', cat [cName chains(cnums(i)-1), (fnum-1)/2], dummydist]; 
+			elseif dummydist > 10 and scores(i) == 0 then
+				//print cat['dummydist:', dummydist];
+				oDestroy [cAtoms chains(cnums(i)-1)];
+				oDestroy [cAtoms chains(cnums(i))];
+				scores2 = dropfirst scores2; // drop 0 score
+				write ['Deleted {} because of distance ({} Å) from centroid.\n', cat [cName chains(cnums(i)-1), (fnum-1)/2], dummydist]; 
+			elseif dummydist > 10 then
+				//print cat['dummydist:', dummydist];
+				oDestroy [cAtoms chains(cnums(i)-1)];
+				oDestroy [cAtoms chains(cnums(i))];
+				scores2 = diff[scores2, scores(i)]; // remove deleted fragment's score from score matrix
+				write ['Deleted {} because of distance ({} Å) from centroid.\n', cat [cName chains(cnums(i)-1), (fnum-1)/2], dummydist]; 
+			endif
+		endloop
+		
+		
+		fnum = [];
+		dummies = SelectedAtoms[]; // assign new dummy vector WITHOUT dummies that were too far from the centroid
+		aSetSelected [Atoms[], 0]; // deselect dummies
+		
+		// END FRAGMENT TO CENTROID CHECK
+
+		
+		aSetSelected [dummies, 1];
+		local dum_chains = oParent oParent dummies; // create vector of dummy atoms chains so they can be deleted if they don't fit the distance cutoff
+		matrix = aDist [tr dummies, dummies]; // new distance matrix based on refreshed dummy vector
+		
+		local mat_scored = [scores: scores2, dist: matrix]; // assign mat_scored.scores as scores2, the vector containing scores of fragments that haven't been deleted. Scores and dist matrix should be the same size
+		chains = Chains[];
+		local d, r;
+		frag_delete = [];
+		i=0; 	// reset count for new loop
+		cnums = cNumber oParent oParent dummies;
+
+		//print mat_scored.dist;
+		//print length mat_scored.dist;
+
+		for d in mat_scored.dist loop // loop through remaining fragments to see which overlap or are too far from other fragments. 
+						  // scores2 remains the same and is checked, while mat_scored.scores is changed
+			d = pack d;
+			//print d;
+			//sleep 1000;
+			local fragtypes = rName cResidues dropfirst Chains[];
+			local ft = fragtypes <> '*';
+			//print cat['d:', d];
+			i = i+1;
+			local s = scores2(i);
+			fnum = cNumber chains(cnums(i)-1);
+
+			if length pack (d < 0.5) > 0 and scores2(i) == 0 and freq [0, mat_scored.scores] > 1 and (fnum-1)/2 <> 1 then // fragments that overlap and have the same score
+				oDestroy cAtoms chains(cnums(i)-1); // destroy fragment atoms (doesn't destroy fragment chain which ensures correct numbering ((fragment is before dummy chain, hence i-1)))
+				dummies = diff[dummies, cAtoms dum_chains(i)]; // reassign new dummy vector by dropping deleted dummy for new distance calc.
+				oDestroy cAtoms dum_chains(i); // destroy the dummy atom associated with the deleted fragment, necessary for new distance calculation
+				write ['Deleted {} because of overlap ({} Å).\n', cat [cName chains(cnums(i)-1), (fnum-1)/2], min d]; 
+				mat_scored.scores = dropfirst mat_scored.scores;
+				//if length dummies == 1 then print [];
+					//else
+					//print dummies;
+					mat_scored.dist = aDist [tr dummies, dummies];
+				//endif
+				
+				
+			elseif length pack (d < 0.5) > 0 and anytrue (scores2(i) > mat_scored.scores) and (fnum-1)/2 <> 1 and length pack ft <> 1 then	
+				oDestroy cAtoms chains(cnums(i)-1); // destroy fragment atoms (doesn't destroy fragment chain which ensures correct numbering ((fragment is before dummy chain, hence i-1)))
+				dummies = diff[dummies, cAtoms dum_chains(i)];  // reassign new dummy vector by dropping deleted dummy for new distance calc.
+				oDestroy cAtoms dum_chains(i);
+				write ['Deleted {} because of overlap ({} Å) and score.\n', cat [cName chains(cnums(i)-1), (fnum-1)/2], min d]; 
+				mat_scored.scores = diff[mat_scored.scores, mat_scored.scores(indexof[s, mat_scored.scores])];
+				//if length dummies == 1 then print [];
+					//else
+					//print dummies;
+					mat_scored.dist = aDist [tr dummies, dummies];
+				//endif
+				//print cat['new_dist:',mat_scored.dist];
+
+//CHANGED to 10 4/27/21, def. is 15
+			elseif length pack (d < 10) <= 1 and scores2(i) == 0 and length pack ft > 2  and (fnum-1)/2 <> 1 and length pack ft <> 1 then //and anytrue (mat_scored.scores(i) > mat_scored.scores) then
+				oDestroy cAtoms chains(cnums(i)-1); // destroy fragment atoms (doesn't destroy fragment chain which ensures correct numbering ((fragment is before dummy chain, hence i-1)))
+				dummies = diff[dummies, cAtoms dum_chains(i)];  // reassign new dummy vector by dropping deleted dummy for new distance calc.
+				oDestroy cAtoms dum_chains(i);
+				write ['Deleted {} because of distance from other fragments ({} Å).\n', cat [cName chains(cnums(i)-1), (fnum-1)/2], d]; 
+				mat_scored.scores = dropfirst mat_scored.scores;
+				//if length dummies == 1 then print [];
+					//else
+					//print dummies;
+					mat_scored.dist = aDist [tr dummies, dummies];
+				//endif
+		
+//CHANGED to 10 4/27/21
+			elseif length pack (d < 10) <= 1 and length pack ft > 2  and (fnum-1)/2 <> 1 then
+				oDestroy cAtoms chains(cnums(i)-1); // destroy fragment atoms (doesn't destroy fragment chain which ensures correct numbering ((fragment is before dummy chain, hence i-1)))
+				dummies = diff[dummies, cAtoms dum_chains(i)];  // reassign new dummy vector by dropping deleted dummy for new distance calc.
+				oDestroy cAtoms dum_chains(i);
+				write ['Deleted {} because of distance from other fragments ({} Å).\n', cat [cName chains(cnums(i)-1), (fnum-1)/2], d];
+				mat_scored.scores = diff[mat_scored.scores, mat_scored.scores(indexof[s, mat_scored.scores])];
+				//if length dummies == 1 then print [];
+					//else
+					//print dummies;
+					mat_scored.dist = aDist [tr dummies, dummies];
+				//endif
+
+
+			endif
+		
+		endloop
+		//return;
+		
+		aSetSelected [Atoms[], 0];
+			
+
+		chains = Chains[];
+		local [rec_atoms] = cAtoms chains(1); // get receptor atoms
+		local frags = dropfirst chains; // create subset of just fragments
+		local frag_chain;
+		local ligkeys = cat cAtoms frags;
+		local dummy_mask = aElement ligkeys <> 'LP';
+		ligkeys = ligkeys | dummy_mask;
+		//aSetSelected [ligkeys, 1];
+		local use_frags = [];
+		local sel_atoms = []; // empty vector for fragment atoms that are to be selected
+		
+		local itypes = ['Hbond', 'Metal', 'Ionic', 'Covalent', 'Arene', 'Distance'];
+			local iopt = [
+		emin_hb:	    minE[-0.1, 0.10],
+		emin_hpi:	    minE[-0.1, 0.10],
+		emin_ion:	    0.10,
+		distance_threshold: 4.5, //4.5 default
+		layoutrechb:	    1	// incl. rec-rec hbond in layout
+		];
+
+		
+		//from prolig2d.svl, calculates fragments with strong interactions
+		local iract = prolig_Calculate [itypes, ligkeys, rec_atoms, iopt];
+		local [iract_2, iract_3] = [iract(2), iract(3)];
+		local lrmask = indexof [iract_2, ligkeys] and indexof [iract_3, rec_atoms];
+		local rlmask = indexof [iract_3, ligkeys] and indexof [iract_2, rec_atoms];
+		local mask = andE [indexof [iract(1), ['Hbond', 'Metal', 'Ionic', 'Covalent']],lrmask or rlmask];
+		//local arene_mask = andE [iract(1) == 'Arene', lrmask or rlmask];
+		//mask = mask or arene_mask;
+		local s_lim = select [iract(2), iract(3), lrmask] | mask;	// multi atom
+		local s_rim = select [iract(3), iract(2), lrmask] | mask;	// for arene
+		local s_score = iract(4) | mask;
+		//print s_score;
+		local s_score_sorted = sort s_score;
+		local score;
+		local s_lim_sorted = [];
+
+		aSetSelected [s_lim,1]; //select atoms that have strong interactions
+		//print s_rim;
+		write ['Fragments with strong interactions: {} \n', uniq cat [cName oParent oParent s_lim]]; 
+		local atom;
+		local ring_centroids = [];
+		for score in s_score_sorted loop
+			s_lim_sorted = cat [s_lim_sorted, get [s_lim, indexof [score, s_score]]];
+		endloop;
+		
+		//return;
+		//print s_lim_sorted;
+
+		for atom in s_lim_sorted loop // for atoms with strong interactions
+			print aElement atom;
+			//print cName oParent oParent atom;
+			if [aIn6Ring atom] == 1 then // 6-ring fragments have hydrophobic centers, making a dummy atom conserves the Hyd center while allowing for removal of the AtomQ queries which are unnecessary
+				rSetSelected [oParent atom, 1];
+				centroid = oCentroid [oParent atom];
+				local mol = mol_Create [ '', [ '', '', '', 1 ], 
+				[ '*', 1, " ", 'none', 1 ], 
+				[ 'LP', 0, 'sp', 0, 0, [ [] ], 0, 'DU', 0, centroid(1),centroid(2),centroid(3) ] ];
+				ring_centroids = cat[ring_centroids, cAtoms last Chains[]];
+			endif
+			
+			
+			local [parent_atoms] = rAtoms oParent atom;
+			local ox_mask = aElement parent_atoms == 'O';
+			local n_mask = aElement parent_atoms == 'N';
+			local ox_atoms = parent_atoms | ox_mask;
+			local n_atoms = parent_atoms | n_mask;
+			//print 'filtered';
+			local [selected_ox] = aSelected [ox_atoms];
+			local [selected_n] = aSelected [n_atoms];
+			//print 'selected';
+			if cName oParent oParent atom == 'methylsulfonate' and aElement atom == 'O' and geE [add selected_ox, 2] == 1 then
+				aSetSelected [atom, 0];
+			endif
+			
+			if cName oParent oParent atom == 'acetate ion' and aElement atom == 'O' and geE [add selected_ox, 2] == 1 then
+				aSetSelected [atom, 0];
+			endif
+			
+			if cName oParent oParent atom == 'methyltetrazolium' and aElement atom == 'N' and geE [add selected_n, 2] == 1 then
+				aSetSelected [atom, 0];
+			endif
+			
+			if cName oParent oParent atom == 'methylguanidinium' and aElement atom == 'N' and geE [add selected_n, 2] == 1 then
+				aSetSelected [atom, 0];
+			endif
+			
+			if cName oParent oParent atom == 'methylamidinium' and aElement atom == 'N' and geE [add selected_n, 2] == 1 then
+				aSetSelected [atom, 0];
+			endif
+		endloop
+		
+		local hyd_atom;
+		local chain;	
+		for chain in Chains[] loop	
+			if cName chain == '3-methylindole' then // create hydrophobic annotation point for 3-MI hydrophobic 5-membered ring
+				local [MIN_atoms] = cAtoms chain;
+				if anytrue freq [MIN_atoms, s_lim] == 1 then // ensure that 3-MI atoms are in s_lim
+					local fivering_mask = aIn5Ring MIN_atoms;
+					local fivering_atoms = MIN_atoms | fivering_mask;
+					centroid = oCentroid fivering_atoms;
+					hyd_atom = mol_Create [ '', [ '', '', '', 1 ], 
+					[ '*', 1, " ", 'none', 1 ], 
+					[ 'C', 0, 'sp3', 0, 0, [ [] ], 0, 'C', 0, centroid(1),centroid(2),centroid(3) ] ];
+					ring_centroids = cat[ring_centroids, cAtoms last Chains[]];
+				endif
+			endif
+		endloop
+		//return;
+		aSetSelected [ring_centroids,1]; //select centroids to annotate rings as Hyd
+		
+		
+
+		local atoms = SelectedAtoms[];
+		local atoms_type = ph4_aType atoms;
+		local info = [atoms: atoms, atype: atoms_type];
+		i=1;
+		
+		//return;
+
+		
+		//run ph4 editor
+		run '$MOE/svl/run/ph4_edit_2.svl';
+		local wkey = ph4_EditorWkeyList [];
+		WindowShow wkey;
+		if notnull SelectedAtoms[] == 1 then
+			WindowTrigger [wkey, [create_F:1024]];
+				loop 
+					chains = Chains[];
+					local [features] = cAtoms last droplast chains;
+					until notnull features
+				endloop
+		endif
+
+		chains = Chains[];
+		
+		
+		local data = ph4_EditorGetData wkey;
+		local feat = [atoms: features, names: data.F.expr];
+		
+		local feat_name;
+		local feat_delete = [];
+		i=0;
+		for feat_name in feat.names loop
+			i=i+1;
+			if feat_name == 'AtomQ' then
+				feat_delete = cat [feat_delete,feat.atoms(i)];
+			endif
+		endloop
+		
+		
+		aSetSelected [Atoms[],0]; //deselect all features
+		aSetSelected [feat_delete,1]; //select AtomQ features to be deleted
+		//return;
+		sleep 2;
+		local nvp = WindowValues wkey;
+		local mainlist = nvp.mainlist(1);
+		//print cat ['mainlist', length mainlist];
+		//print cat ['feat.atoms', length feat.atoms];
+		local tf = feat.names == 'AtomQ';
+		loop
+			if alltrue tf == 1 then
+				WindowTrigger [wkey, [button_delete:1024]];
+				//print 2;
+				break;
+			elseif  length mainlist == length feat.atoms then // if selected atoms are all AtomQ then
+				nvp = WindowValues wkey;
+				//print 1;
+				mainlist = nvp.mainlist(1);
+				//print mainlist;
+				break;
+			elseif length mainlist < length feat.atoms then // if the mainlist length is less than the length of the feature atoms
+				WindowTrigger [wkey, [button_delete:1024]];
+				//print 2;
+				break;
+			elseif length mainlist == 1 then
+				WindowDestroy wkey;
+				//print 3;
+				break;
+			endif
+		endloop
+		
+		sleep 1;
+		[features] = cAtoms last droplast Chains[];
+		features_length = length features;
+
+// from random_ph4gen.svl //
+	loop
+	[features] = cAtoms last droplast chains;	
+	
+	local nums;
+
+	if length features == 13 then
+		nums = [8,9,10,11,12,13];
+	elseif length features == 12 then
+		nums = [8,9,10,11,12];
+	elseif length features == 11 then
+		nums = [8,9,10,11];
+	elseif length features == 10 then
+		nums = [8,9,10];
+	elseif length features == 9 then
+		nums = [8,9];
+	elseif length features == 8 then
+		nums = [8];
+	endif
+
+	//print length features;
+
+	if length features > 7 then
+		WindowTrigger [wkey, [mainlist:nums]];
+		if length SelectedAtoms[] < length features then
+			WindowTrigger [wkey, [button_delete:1024]];
+		endif
+	endif
+	sleep 0.1;
+	nvp = WindowValues wkey;
+	mainlist = nvp.mainlist(1);
+	if length features <= 7 then break;
+	endif
+	endloop
+	// end from random_ph4gen.svl //
+	
+		[features] = cAtoms last droplast Chains[];
+		features_length = length features;
+	
+		
+		data = ph4_EditorGetData wkey;
+		fwrite_PH4 [tok_cat [sortfield,'.ph4'], data, [header:1]];
+
+		print cat['features:',features_length];
+		sleep 2;
+		if wkey == ph4_EditorWkeyList [] then
+			WindowDestroy wkey;
+		endif;
+		
+		if features_length < 7 then
+			oDestroy dropfirst dropfirst Chains[]; // destroy everything except the receptor
+		endif
+	endloop;
+		
+	write ['Done.\n'];
+	logfile[];	
+	endfunction
+///////////////////END PHARMACOPHORE GENERATION////////////////////////
+
+///////////////////FEATURE SEARCH////////////////////////
+
+	local function feature_search_dir_7feats [compound_db];
+	// sort type is the score type
+	local files = flist[[],'*.ph4'];
+	local ph4fname;
+	local hits = [];
+	//local i = 1;
+
+
+	for ph4fname in files loop
+	print ph4fname;
+	local score_type = fbase ph4fname;
+	logfile tok_cat['log1.txt'];
+	ph4_Search [compound_db, ph4fname, 
+			[
+				abspos                : 0,
+				action                : 0,
+				descexpr              : '',
+				esel                  : 0,
+			matchsize             : 3,
+				maxconfhits           : 0,
+				maxmolhits            : 0,
+				molfield              : 'mol',
+			mseqfield		  :'mseq',
+				o_molfield            : 'mol',
+				o_mseqfield           : 'mseq',
+				o_rmsdxfield          : 'rmsdx',
+				o_rscore_colfield     : 'rscore[F#]',
+				o_rscore_sumfield     : 'rscore',
+				out_append            : 0,
+				out_dbfile            : tok_cat [score_type, '_3.mdb'],
+				out_dbv               : 0,
+				out_type_molecules    : 1,
+				sortby                : 'rmsdx',
+				use_mname             : 0,
+				use_mseqfield         : 1,
+				use_o_fileIdxField    : 0,
+				use_o_fileNameField   : 0,
+				use_o_hitmapfield     : 0,
+				use_o_hitmapfieldC    : 0,
+				use_o_hitsizefield    : 0,
+				use_o_hitsizefieldC   : 0,
+				use_o_molfield        : 1,
+				use_o_mseqfield       : 1,
+				use_o_rmsdfield       : 0,
+				use_o_rmsdxfield      : 1,
+				use_o_rowfield        : 0,
+				use_o_rscore_colfield : 1,
+				use_o_rscore_sumfield : 1,
+				use_o_rscore_vecfield : 0,
+				use_out_dbfile        : 1,
+				usepsilo              : 0
+			]
+	];
+
+		logfile 0;
+		logfile[];
+
+		//obtain hits from log file
+		local hitline = last freadb ['log1.txt', 'line', INT_MAX];
+		local ws = wordsplit [hitline, " "];
+		local hits1 = ws(3);
+		hits1 = atoi token hits1;
+		hits1 = cat[tok_cat [score_type, '_3'], hits1];
+
+	logfile 'log2.txt';
+	ph4_Search [compound_db, ph4fname, 
+			[
+				abspos                : 0,
+				action                : 0,
+				descexpr              : '',
+				esel                  : 0,
+			matchsize             : 4,
+				maxconfhits           : 0,
+				maxmolhits            : 0,
+				molfield              : 'mol',
+			mseqfield		  : 'mseq',
+				o_molfield            : 'mol',
+				o_mseqfield           : 'mseq',
+				o_rmsdxfield          : 'rmsdx',
+				o_rscore_colfield     : 'rscore[F#]',
+				o_rscore_sumfield     : 'rscore',
+				out_append            : 0,
+				out_dbfile            : tok_cat [score_type, '_4.mdb'],
+				out_dbv               : 0,
+				out_type_molecules    : 1,
+				sortby                : 'rmsdx',
+				use_mname             : 0,
+				use_mseqfield         : 1,
+				use_o_fileIdxField    : 0,
+				use_o_fileNameField   : 0,
+				use_o_hitmapfield     : 0,
+				use_o_hitmapfieldC    : 0,
+				use_o_hitsizefield    : 0,
+				use_o_hitsizefieldC   : 0,
+				use_o_molfield        : 1,
+				use_o_mseqfield       : 1,
+				use_o_rmsdfield       : 0,
+				use_o_rmsdxfield      : 1,
+				use_o_rowfield        : 0,
+				use_o_rscore_colfield : 1,
+				use_o_rscore_sumfield : 1,
+				use_o_rscore_vecfield : 0,
+				use_out_dbfile        : 1,
+				usepsilo              : 0
+			]
+	];
+
+	logfile 0;
+	logfile[];
+
+		//obtain hits from log file
+		hitline = last freadb ['log2.txt', 'line', INT_MAX];
+		ws = wordsplit [hitline, " "];
+		local hits2 = ws(3);
+		hits2 = atoi token hits2;
+		hits2 = cat[tok_cat [score_type, '_4'], hits2];
+
+	logfile 'log3.txt';
+	ph4_Search [compound_db, ph4fname, 
+			[
+				abspos                : 0,
+				action                : 0,
+				descexpr              : '',
+				esel                  : 0,
+			matchsize             : 5,
+				maxconfhits           : 0,
+				maxmolhits            : 0,
+				molfield              : 'mol',
+			mseqfield		  :'mseq',
+				o_molfield            : 'mol',
+				o_mseqfield           : 'mseq',
+				o_rmsdxfield          : 'rmsdx',
+				o_rscore_colfield     : 'rscore[F#]',
+				o_rscore_sumfield     : 'rscore',
+				out_append            : 0,
+				out_dbfile            : tok_cat [score_type, '_5.mdb'],
+				out_dbv               : 0,
+				out_type_molecules    : 1,
+				sortby                : 'rmsdx',
+				use_mname             : 0,
+				use_mseqfield         : 1,
+				use_o_fileIdxField    : 0,
+				use_o_fileNameField   : 0,
+				use_o_hitmapfield     : 0,
+				use_o_hitmapfieldC    : 0,
+				use_o_hitsizefield    : 0,
+				use_o_hitsizefieldC   : 0,
+				use_o_molfield        : 1,
+				use_o_mseqfield       : 1,
+				use_o_rmsdfield       : 0,
+				use_o_rmsdxfield      : 1,
+				use_o_rowfield        : 0,
+				use_o_rscore_colfield : 1,
+				use_o_rscore_sumfield : 1,
+				use_o_rscore_vecfield : 0,
+				use_out_dbfile        : 1,
+				usepsilo              : 0
+			]
+	];
+
+	logfile 0;
+	logfile[];
+
+		//obtain hits from log file
+		hitline = last freadb ['log3.txt', 'line', INT_MAX];
+		ws = wordsplit [hitline, " "];
+		local hits3 = ws(3);
+		hits3 = atoi token hits3;
+		hits3 = cat[tok_cat [score_type, '_5'], hits3];
+
+	logfile 'log4.txt';
+	ph4_Search [compound_db, ph4fname, 
+			[
+				abspos                : 0,
+				action                : 0,
+				descexpr              : '',
+				esel                  : 0,
+			matchsize             : 6,
+				maxconfhits           : 0,
+				maxmolhits            : 0,
+				molfield              : 'mol',
+			mseqfield		  : 'mseq',
+				o_molfield            : 'mol',
+				o_mseqfield           : 'mseq',
+				o_rmsdxfield          : 'rmsdx',
+				o_rscore_colfield     : 'rscore[F#]',
+				o_rscore_sumfield     : 'rscore',
+				out_append            : 0,
+				out_dbfile            : tok_cat [score_type, '_6.mdb'],
+				out_dbv               : 0,
+				out_type_molecules    : 1,
+				sortby                : 'rmsdx',
+				use_mname             : 0,
+				use_mseqfield         : 1,
+				use_o_fileIdxField    : 0,
+				use_o_fileNameField   : 0,
+				use_o_hitmapfield     : 0,
+				use_o_hitmapfieldC    : 0,
+				use_o_hitsizefield    : 0,
+				use_o_hitsizefieldC   : 0,
+				use_o_molfield        : 1,
+				use_o_mseqfield       : 1,
+				use_o_rmsdfield       : 0,
+				use_o_rmsdxfield      : 1,
+				use_o_rowfield        : 0,
+				use_o_rscore_colfield : 1,
+				use_o_rscore_sumfield : 1,
+				use_o_rscore_vecfield : 0,
+				use_out_dbfile        : 1,
+				usepsilo              : 0
+			]
+	];
+
+	logfile 0;
+		logfile[];
+
+		//obtain hits from log file
+		hitline = last freadb ['log4.txt', 'line', INT_MAX];
+		ws = wordsplit [hitline, " "];
+		local hits4 = ws(3);
+		hits4 = atoi token hits4;
+		hits4 = cat[tok_cat [score_type, '_6'], hits4];
+
+	logfile 'log5.txt';
+	ph4_Search [compound_db, ph4fname, 
+			[
+				abspos                : 0,
+				action                : 0,
+				descexpr              : '',
+				esel                  : 0,
+				matchsize             : 7,
+				maxconfhits           : 0,
+				maxmolhits            : 0,
+				molfield              : 'mol',
+			mseqfield		  : 'mseq',
+				o_molfield            : 'mol',
+				o_mseqfield           : 'mseq',
+				o_rmsdxfield          : 'rmsdx',
+				o_rscore_colfield     : 'rscore[F#]',
+				o_rscore_sumfield     : 'rscore',
+				out_append            : 0,
+				out_dbfile            : tok_cat [score_type, '_7.mdb'],
+				out_dbv               : 0,
+				out_type_molecules    : 1,
+				sortby                : 'rmsdx',
+				use_mname             : 0,
+				use_mseqfield         : 1,
+				use_o_fileIdxField    : 0,
+				use_o_fileNameField   : 0,
+				use_o_hitmapfield     : 0,
+				use_o_hitmapfieldC    : 0,
+				use_o_hitsizefield    : 0,
+				use_o_hitsizefieldC   : 0,
+				use_o_molfield        : 1,
+				use_o_mseqfield       : 1,
+				use_o_rmsdfield       : 0,
+				use_o_rmsdxfield      : 1,
+				use_o_rowfield        : 0,
+				use_o_rscore_colfield : 1,
+				use_o_rscore_sumfield : 1,
+				use_o_rscore_vecfield : 0,
+				use_out_dbfile        : 1,
+				usepsilo              : 0
+			]
+	];
+
+	logfile 0;
+	logfile[];
+
+		//obtain hits from log file
+		hitline = last freadb ['log5.txt', 'line', INT_MAX];
+		ws = wordsplit [hitline, " "];
+		local hits5 = ws(3);
+		hits5 = atoi token hits5;
+		hits5 = cat[tok_cat [score_type, '_7'], hits5];
+
+		local hitv = cat [hits1,hits2,hits3,hits4,hits5];
+		hits = cat [hits, hitv];
+
+
+	endloop
+
+	logfile 'ph4_searchlog.txt';
+
+	//print hits;
+	//print length hits;
+	write ['Hits:\n'];
+	write ['{} : {}\n', hits(1),hits(2)]; //dE(class) 3
+	write ['{} : {}\n', hits(3),hits(4)]; //dE(class) 4
+	write ['{} : {}\n', hits(5),hits(6)]; //dE(class) 5
+	write ['{} : {}\n', hits(7),hits(8)]; //dE(class) 6
+	write ['{} : {}\n', hits(9),hits(10)]; //dE(class) 7
+	write ['{} : {}\n', hits(11),hits(12)]; //dE 3
+	write ['{} : {}\n', hits(13),hits(14)]; //dE 4
+	write ['{} : {}\n', hits(15),hits(16)]; //dE 5
+	write ['{} : {}\n', hits(17),hits(18)]; //dE 6
+	write ['{} : {}\n', hits(19),hits(20)]; //dE 7
+	write ['{} : {}\n', hits(21),hits(22)]; //du class 3
+	write ['{} : {}\n', hits(23),hits(24)]; // du class 4
+	write ['{} : {}\n', hits(25),hits(26)]; //du class 5
+	write ['{} : {}\n', hits(27),hits(28)]; //du class 6
+	write ['{} : {}\n', hits(29),hits(30)]; // du class 7
+	write ['{} : {}\n', hits(31),hits(32)]; // dU 3
+	write ['{} : {}\n', hits(33),hits(34)]; // dU 4
+	write ['{} : {}\n', hits(35),hits(36)]; // dU 5
+	write ['{} : {}\n', hits(37),hits(38)]; // dU 6
+	write ['{} : {}\n', hits(39),hits(40)]; // dU 7
+	//print hits1;
+	//print hits2;
+	//print hits3;
+
+	logfile[];
+	endfunction
+
+///////////////////END FEATURE SEARCH////////////////////////
+
+///////////////////PHARMCOUNT////////////////////////
+	local function pharmcount_dir [receptor, offset1,offset2,offset3,offset4,offset5]
+	Close [force:1, viewreset:1, delgobj:1];        // close any open structures
+
+	local entry_key, entry_record, values, index, mdb, output_token;
+	local files = flist [[],'*.mdb'];
+	local output = flist [[],'*_output.mdb'];
+	files = diff[files,output];
+	local count = 0;
+	local prior_mseq = 0;
+	local i=0;
+
+	logfile 'pharmcount_log.txt';
+
+	for mdb in files loop
+		local mdb_key = db_Open [mdb, 'read'];
+		local entries = db_Entries mdb_key;
+		local sum = [];
+		
+		for entry_key in entries loop // for each entry, untag and compare prior_mseq to mseq in entry
+
+		entry_record = db_Read [mdb_key, entry_key]; 
+		values = last untag entry_record; // removes tags from tagged vector, just values
+
+		if prior_mseq <> values(2) then // if prior_mseq isn't equal to current mseq (molecule sequence number)
+			prior_mseq = values(2);
+			for index in values loop // for each mseq in all mseqs
+				i=i+1;
+				if eqL [receptor, index] then // if the top level arguments are identical AND 
+					if values(i-offset1)  then
+						count = count+1;
+					endif
+					
+					if values(i-offset2)  then
+						count = count+1;
+					endif
+
+					if values(i-offset3)  then
+						count = count+1;
+					endif
+
+					if values(i-offset4)  then
+						count = count+1;
+					endif
+
+					if values(i-offset5)  then
+						count = count+1;
+					endif
+				endif
+			endloop
+			i=0;
+		endif
+
+	endloop
+
+	db_Close mdb_key; 
+
+	sum = cat[sum,count];
+	prior_mseq = 0;
+	i=0;
+
+	//write number of actives
+	write['{} : {}\n', mdb, add sum];
+	count = 0;
+	prior_mseq= 0;
+	i=0;
+endloop
+print 'done';
+
+logfile[];
+
+endfunction
+
+///////////////////END PHARMCOUNT////////////////////////
+
+///////////////////RUN SBP 7 FEATS////////////////////////
+	local function run_SBP_7feats [receptor, database_file, compound_db, receptor_name, residue_numbers]
+
+	fdelete ['dE(class).ph4','dE.ph4','dU(class).ph4','dU.ph4'];
+
+	write 'Old ph4 files deleted.\n';
+
+	//number entries in _output.mdb
+		local entry_key;
+		local entries = db_Entries database_file;
+		local counter = 1;
+
+		db_EnsureField [database_file, 'index','int'];
+		for entry_key in entries loop
+			db_Write [database_file, entry_key, tagpoke[[],'index', counter]];
+			counter = counter + 1;
+		endloop
+
+	write 'Index created in output DB.\n';
+	logfile tok_cat [receptor, '_ph4log.txt'];
+
+	SBP_7feats [receptor, database_file, 'dE(class)', residue_numbers];
+
+	write 'dE(class) ph4 generated.\n';
+
+	if length flist[[], '*.ph4'] == 1 then
+		SBP_7feats [receptor, database_file, 'dE', residue_numbers];
+		write 'dE ph4 generated.\n';
+	endif
+
+	if length flist[[], '*.ph4'] == 2 then
+		SBP_7feats [receptor, database_file, 'dU(class)', residue_numbers];
+		write 'dU(class) ph4 generated.\n';
+	endif
+
+
+	if length flist[[], '*.ph4'] == 3 then
+		SBP_7feats [receptor, database_file, 'dU', residue_numbers];
+		write 'dU(class) ph4 generated.\n';
+	endif
+
+
+	feature_search_dir_7feats [compound_db];
+
+	write ['\n'];
+	write ['Actives:\n'];
+
+	pharmcount_dir [receptor_name, 1,2,3,4,5];
+
+	//print 'done';
+
+	logfile[];
+
+	//Warning 'Done, click OK.';
+
+	endfunction
+
+///////////////////END RUN SBP 7 FEATS////////////////////////
+
+//MAIN FUNCTION
+
+global function scorebased_ph4gen_capped [receptor_name, residue_numbers]; //receptor name in double quotes, residue_numbers is a vector of residue UID numbers
+local folders = flist[];
+//folders = get [folders, [4,5]]; //for rec ef/gh
+local folder;
+
+for folder in folders loop
+
+	cd folder;
+	local receptor = flist[[], '*_minrec.moe'];
+	local database_file = flist[[], '*_output.mdb'];
+	//run_SBP_7feats [receptor, database_file, '$HOME/OneDrive - The University of Memphis/SBP/score_based_ph4/pbd_conf10_updated.mdb', receptor_name, residue_numbers];
+	run_SBP_7feats [receptor, database_file, 'E:/OneDrive - The University of Memphis/SBP/score_based_ph4/pbd_conf10_updated.mdb', receptor_name, residue_numbers];
+	local search_log = freadb ['ph4_searchlog.txt', 'char', INT_MAX];
+	local count_log = freadb ['pharmcount_log.txt', 'char', INT_MAX];
+	fwriteb ['results.txt', 'line', cat [search_log, "Actives:\n", count_log]];
+	cd '..';
+endloop
+
+//Warning 'Done, click OK.';
+
+endfunction

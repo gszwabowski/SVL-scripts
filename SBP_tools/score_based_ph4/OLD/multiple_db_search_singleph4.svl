@@ -1,0 +1,342 @@
+#svl
+function ph4_Search;
+
+
+global function multiple_db_search_singleph4 [ph4, mdb_dir];
+// sort type is the score type
+local files = flist[[],'*.ph4'];
+local mdbs = flist[[mdb_dir], '*.mdb'];
+local mdb;
+local hits = [];
+local feat3_hits = 0;
+local feat4_hits = 0;
+local feat5_hits = 0;
+local feat6_hits = 0;
+local feat7_hits = 0;
+
+logfile tok_cat['log1.txt'];
+//local i = 1;
+
+
+//for ph4 in files loop
+	//print ph4;
+	local score_type = fbase ph4;
+	for mdb in mdbs loop
+		logfile tok_cat['log1.txt'];
+		ph4_Search [mdb, ph4, 
+				[
+				abspos                : 0,
+				action                : 0,
+				descexpr              : '',
+				esel                  : 0,
+				matchsize             : 3,
+				maxconfhits           : 0,
+				maxmolhits            : 0,
+				molfield              : 'mol',
+				mseqfield		  :'mseq',
+				o_molfield            : 'mol',
+				o_mseqfield           : 'mseq',
+				o_rmsdxfield          : 'rmsdx',
+				o_rscore_colfield     : 'rscore[F#]',
+				o_rscore_sumfield     : 'rscore',
+				out_append            : 0,
+				out_dbfile            : tok_cat [score_type, '_3.mdb'],
+				out_dbv               : 0,
+				out_type_molecules    : 1,
+				sortby                : 'rmsdx',
+				use_mname             : 0,
+				use_mseqfield         : 1,
+				use_o_fileIdxField    : 0,
+				use_o_fileNameField   : 0,
+				use_o_hitmapfield     : 0,
+				use_o_hitmapfieldC    : 0,
+				use_o_hitsizefield    : 0,
+				use_o_hitsizefieldC   : 0,
+				use_o_molfield        : 1,
+				use_o_mseqfield       : 1,
+				use_o_rmsdfield       : 0,
+				use_o_rmsdxfield      : 1,
+				use_o_rowfield        : 0,
+				use_o_rscore_colfield : 1,
+				use_o_rscore_sumfield : 1,
+				use_o_rscore_vecfield : 0,
+				use_out_dbfile        : 1,
+				usepsilo              : 0
+			]
+	];
+
+		logfile 0;
+		logfile[];
+
+		//obtain hits from log file
+		local hitline = last freadb ['log1.txt', 'line', INT_MAX];
+		local ws = wordsplit [hitline, " "];
+		local hits1 = ws(3);
+		hits1 = atoi token hits1;
+		feat3_hits = feat3_hits + hits1;
+		hits = cat[tok_cat [score_type, '_3'], hits1];
+		
+		logfile 'log2.txt';
+		ph4_Search [mdb, ph4, 
+			[
+				abspos                : 0,
+				action                : 0,
+				descexpr              : '',
+				esel                  : 0,
+				matchsize             : 4,
+				maxconfhits           : 0,
+				maxmolhits            : 0,
+				molfield              : 'mol',
+				mseqfield		  : 'mseq',
+				o_molfield            : 'mol',
+				o_mseqfield           : 'mseq',
+				o_rmsdxfield          : 'rmsdx',
+				o_rscore_colfield     : 'rscore[F#]',
+				o_rscore_sumfield     : 'rscore',
+				out_append            : 0,
+				out_dbfile            : tok_cat [score_type, '_4.mdb'],
+				out_dbv               : 0,
+				out_type_molecules    : 1,
+				sortby                : 'rmsdx',
+				use_mname             : 0,
+				use_mseqfield         : 1,
+				use_o_fileIdxField    : 0,
+				use_o_fileNameField   : 0,
+				use_o_hitmapfield     : 0,
+				use_o_hitmapfieldC    : 0,
+				use_o_hitsizefield    : 0,
+				use_o_hitsizefieldC   : 0,
+				use_o_molfield        : 1,
+				use_o_mseqfield       : 1,
+				use_o_rmsdfield       : 0,
+				use_o_rmsdxfield      : 1,
+				use_o_rowfield        : 0,
+				use_o_rscore_colfield : 1,
+				use_o_rscore_sumfield : 1,
+				use_o_rscore_vecfield : 0,
+				use_out_dbfile        : 1,
+				usepsilo              : 0
+			]
+	];
+
+	logfile 0;
+	logfile[];
+
+		//obtain hits from log file
+		hitline = last freadb ['log2.txt', 'line', INT_MAX];
+		ws = wordsplit [hitline, " "];
+		local hits2 = ws(3);
+		hits2 = atoi token hits2;
+		feat4_hits = feat4_hits + hits2;
+		hits2 = cat[tok_cat [score_type, '_4'], hits2];
+
+	logfile 'log3.txt';
+	ph4_Search [mdb, ph4, 
+			[
+				abspos                : 0,
+				action                : 0,
+				descexpr              : '',
+				esel                  : 0,
+				matchsize             : 5,
+				maxconfhits           : 0,
+				maxmolhits            : 0,
+				molfield              : 'mol',
+				mseqfield		  :'mseq',
+				o_molfield            : 'mol',
+				o_mseqfield           : 'mseq',
+				o_rmsdxfield          : 'rmsdx',
+				o_rscore_colfield     : 'rscore[F#]',
+				o_rscore_sumfield     : 'rscore',
+				out_append            : 0,
+				out_dbfile            : tok_cat [score_type, '_5.mdb'],
+				out_dbv               : 0,
+				out_type_molecules    : 1,
+				sortby                : 'rmsdx',
+				use_mname             : 0,
+				use_mseqfield         : 1,
+				use_o_fileIdxField    : 0,
+				use_o_fileNameField   : 0,
+				use_o_hitmapfield     : 0,
+				use_o_hitmapfieldC    : 0,
+				use_o_hitsizefield    : 0,
+				use_o_hitsizefieldC   : 0,
+				use_o_molfield        : 1,
+				use_o_mseqfield       : 1,
+				use_o_rmsdfield       : 0,
+				use_o_rmsdxfield      : 1,
+				use_o_rowfield        : 0,
+				use_o_rscore_colfield : 1,
+				use_o_rscore_sumfield : 1,
+				use_o_rscore_vecfield : 0,
+				use_out_dbfile        : 1,
+				usepsilo              : 0
+			]
+	];
+
+	logfile 0;
+	logfile[];
+
+		//obtain hits from log file
+		hitline = last freadb ['log3.txt', 'line', INT_MAX];
+		ws = wordsplit [hitline, " "];
+		local hits3 = ws(3);
+		hits3 = atoi token hits3;
+		feat5_hits = feat5_hits + hits3;
+		hits3 = cat[tok_cat [score_type, '_5'], hits3];
+
+	logfile 'log4.txt';
+	ph4_Search [mdb, ph4, 
+			[
+				abspos                : 0,
+				action                : 0,
+				descexpr              : '',
+				esel                  : 0,
+				matchsize             : 6,
+				maxconfhits           : 0,
+				maxmolhits            : 0,
+				molfield              : 'mol',
+				mseqfield		  : 'mseq',
+				o_molfield            : 'mol',
+				o_mseqfield           : 'mseq',
+				o_rmsdxfield          : 'rmsdx',
+				o_rscore_colfield     : 'rscore[F#]',
+				o_rscore_sumfield     : 'rscore',
+				out_append            : 0,
+				out_dbfile            : tok_cat [score_type, '_6.mdb'],
+				out_dbv               : 0,
+				out_type_molecules    : 1,
+				sortby                : 'rmsdx',
+				use_mname             : 0,
+				use_mseqfield         : 1,
+				use_o_fileIdxField    : 0,
+				use_o_fileNameField   : 0,
+				use_o_hitmapfield     : 0,
+				use_o_hitmapfieldC    : 0,
+				use_o_hitsizefield    : 0,
+				use_o_hitsizefieldC   : 0,
+				use_o_molfield        : 1,
+				use_o_mseqfield       : 1,
+				use_o_rmsdfield       : 0,
+				use_o_rmsdxfield      : 1,
+				use_o_rowfield        : 0,
+				use_o_rscore_colfield : 1,
+				use_o_rscore_sumfield : 1,
+				use_o_rscore_vecfield : 0,
+				use_out_dbfile        : 1,
+				usepsilo              : 0
+			]
+	];
+
+	logfile 0;
+		logfile[];
+
+		//obtain hits from log file
+		hitline = last freadb ['log4.txt', 'line', INT_MAX];
+		ws = wordsplit [hitline, " "];
+		local hits4 = ws(3);
+		hits4 = atoi token hits4;
+		feat6_hits = feat6_hits + hits4;
+		hits4 = cat[tok_cat [score_type, '_6'], hits4];
+
+	logfile 'log5.txt';
+	ph4_Search [mdb, ph4, 
+			[
+				abspos                : 0,
+				action                : 0,
+				descexpr              : '',
+				esel                  : 0,
+				matchsize             : 7,
+				maxconfhits           : 0,
+				maxmolhits            : 0,
+				molfield              : 'mol',
+			mseqfield		  : 'mseq',
+				o_molfield            : 'mol',
+				o_mseqfield           : 'mseq',
+				o_rmsdxfield          : 'rmsdx',
+				o_rscore_colfield     : 'rscore[F#]',
+				o_rscore_sumfield     : 'rscore',
+				out_append            : 0,
+				out_dbfile            : tok_cat [score_type, '_7.mdb'],
+				out_dbv               : 0,
+				out_type_molecules    : 1,
+				sortby                : 'rmsdx',
+				use_mname             : 0,
+				use_mseqfield         : 1,
+				use_o_fileIdxField    : 0,
+				use_o_fileNameField   : 0,
+				use_o_hitmapfield     : 0,
+				use_o_hitmapfieldC    : 0,
+				use_o_hitsizefield    : 0,
+				use_o_hitsizefieldC   : 0,
+				use_o_molfield        : 1,
+				use_o_mseqfield       : 1,
+				use_o_rmsdfield       : 0,
+				use_o_rmsdxfield      : 1,
+				use_o_rowfield        : 0,
+				use_o_rscore_colfield : 1,
+				use_o_rscore_sumfield : 1,
+				use_o_rscore_vecfield : 0,
+				use_out_dbfile        : 1,
+				usepsilo              : 0
+			]
+	];
+
+	logfile 0;
+	logfile[];
+
+		//obtain hits from log file
+		hitline = last freadb ['log5.txt', 'line', INT_MAX];
+		ws = wordsplit [hitline, " "];
+		local hits5 = ws(3);
+		hits5 = atoi token hits5;
+		feat7_hits = feat7_hits + hits5;
+		hits5 = cat[tok_cat [score_type, '_7'], hits5];
+
+		local hitv = cat [hits1,hits2,hits3,hits4,hits5];
+		hits = cat [hits, hitv];
+
+		
+	endloop
+//endloop
+
+logfile 'ph4_searchlog.txt';
+
+//print hits;
+//print length hits;
+//write ['Hits:\n'];
+//write ['{} : {}\n', hits(1),hits(2)]; //dE(class) 3
+//write ['{} : {}\n', hits(3),hits(4)]; //dE(class) 4
+//write ['{} : {}\n', hits(5),hits(6)]; //dE(class) 5
+//write ['{} : {}\n', hits(7),hits(8)]; //dE(class) 6
+//write ['{} : {}\n', hits(9),hits(10)]; //dE(class) 7
+//write ['{} : {}\n', hits(11),hits(12)]; //dE 3
+//write ['{} : {}\n', hits(13),hits(14)]; //dE 4
+//write ['{} : {}\n', hits(15),hits(16)]; //dE 5
+//write ['{} : {}\n', hits(17),hits(18)]; //dE 6
+//write ['{} : {}\n', hits(19),hits(20)]; //dE 7
+//write ['{} : {}\n', hits(21),hits(22)]; //du class 3
+//write ['{} : {}\n', hits(23),hits(24)]; // du class 4
+//write ['{} : {}\n', hits(25),hits(26)]; //du class 5
+//write ['{} : {}\n', hits(27),hits(28)]; //du class 6
+//write ['{} : {}\n', hits(29),hits(30)]; // du class 7
+//write ['{} : {}\n', hits(31),hits(32)]; // dU 3
+//write ['{} : {}\n', hits(33),hits(34)]; // dU 4
+//write ['{} : {}\n', hits(35),hits(36)]; // dU 5
+//write ['{} : {}\n', hits(37),hits(38)]; // dU 6
+//write ['{} : {}\n', hits(39),hits(40)]; // dU 7
+
+write '\n';
+write ['3feat_hits : {}\n', feat3_hits];
+write ['4feat_hits : {}\n', feat4_hits];
+write ['5feat_hits : {}\n', feat5_hits];
+write ['6feat_hits : {}\n', feat6_hits];
+write ['7feat_hits : {}\n', feat7_hits];
+
+print hits;
+
+//print hits1;
+//print hits2;
+//print hits3;
+
+logfile[];
+endfunction

@@ -1,0 +1,129 @@
+#svl
+
+function db_ImportDB;
+global function aggregate_hitlist [];
+
+db_Open ['hitlist_aggregated.mdb', 'create'];
+
+local mdb;
+local hits = [];
+local mdbs = []; 
+local dE_class_mdbs = flist[[],'dE(class)_*.mdb'];
+local dE_mdbs = flist[[],'dE_*.mdb'];
+local dU_class_mdbs = flist[[],'dU(class)_*.mdb'];
+local dU_mdbs = flist[[],'dU_*.mdb'];
+
+//dE(class)
+
+	for mdb in dE_class_mdbs loop
+	
+		hits = append [hits, length uniq db_ReadColumn [mdb, 'mseq']];
+		mdbs = append [mdbs, mdb];
+
+	endloop
+
+	local zero_mask = hits <> 0;
+	hits = hits | zero_mask;
+	mdbs = mdbs | zero_mask;
+
+	if min hits < 10 then
+		local dE_class_mdb = mdbs(indexof [min hits, hits]);
+		write ['dE_class hits: {} \n', min hits]; 
+	endif
+
+	hits = [];
+	mdbs = [];
+
+//dE
+
+	for mdb in dE_mdbs loop
+	
+		hits = append [hits, length uniq db_ReadColumn [mdb, 'mseq']];
+		mdbs = append [mdbs, mdb];
+
+	endloop
+
+	zero_mask = hits <> 0;
+	hits = hits | zero_mask;
+	mdbs = mdbs | zero_mask;
+
+	if min hits < 10 then
+		local dE_mdb = mdbs(indexof [min hits, hits]);
+		write ['dE hits: {} \n', min hits]; 
+	endif
+
+	hits = [];
+	mdbs = [];
+
+//dU(class)
+
+	for mdb in dU_class_mdbs loop
+	
+		hits = append [hits, length uniq db_ReadColumn [mdb, 'mseq']];
+		mdbs = append [mdbs, mdb];
+
+	endloop
+
+	zero_mask = hits <> 0;
+	hits = hits | zero_mask;
+	mdbs = mdbs | zero_mask;
+
+	if min hits < 10 then
+		local dU_class_mdb = mdbs(indexof [min hits, hits]);
+		write ['dU_class hits: {} \n', min hits]; 
+	endif
+
+	hits = [];
+	mdbs = [];
+
+//dU
+
+	for mdb in dU_mdbs loop
+	
+		hits = append [hits, length uniq db_ReadColumn [mdb, 'mseq']];
+		mdbs = append [mdbs, mdb];
+
+	endloop
+
+	zero_mask = hits <> 0;
+	hits = hits | zero_mask;
+	mdbs = mdbs | zero_mask;
+
+	if min hits < 10 then
+		local dU_mdb = mdbs(indexof [min hits, hits]);
+		write ['dU hits: {} \n', min hits]; 
+	endif
+
+	hits = [];
+	mdbs = [];
+
+//database import
+
+print dE_class_mdb;
+print dE_mdb;
+print dU_class_mdb;
+print dU_mdb;
+
+//return;
+
+if notnull dE_class_mdb then
+	db_ImportDB ['hitlist_aggregated.mdb', dE_class_mdb, [], []];
+endif
+
+if notnull dE_mdb then
+	db_ImportDB ['hitlist_aggregated.mdb', dE_mdb, [], []];
+endif
+
+if notnull dU_class_mdb then
+	db_ImportDB ['hitlist_aggregated.mdb', dU_class_mdb, [], []];
+endif
+
+if notnull dU_mdb then
+	db_ImportDB ['hitlist_aggregated.mdb', dU_mdb, [], []];
+endif
+
+hits = length uniq db_ReadColumn ['hitlist_aggregated.mdb', 'mseq'];
+
+write ['\nUnique hits: {} \n', hits];
+
+endfunction;

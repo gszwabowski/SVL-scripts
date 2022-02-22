@@ -1,0 +1,66 @@
+Pharmacophore Search (Thu Dec 03 12:14:54 2020)
+
+COMMAND:
+    ph4_Search [
+	'mdb_dir/zinc_48e_conf.mdb',
+	'dU(class).ph4',
+	[
+	    abspos                : 0,
+	    action                : 0,
+	    descexpr              : '',
+	    esel                  : 0,
+	    matchsize             : 7,
+	    maxconfhits           : 0,
+	    maxmolhits            : 0,
+	    molfield              : 'mol',
+	    mseqfield             : 'mseq',
+	    o_molfield            : 'mol',
+	    o_mseqfield           : 'mseq',
+	    o_rmsdxfield          : 'rmsdx',
+	    o_rscore_colfield     : 'rscore[F#]',
+	    o_rscore_sumfield     : 'rscore',
+	    out_append            : 0,
+	    out_dbfile            : 'dU(class)_7.mdb',
+	    out_dbv               : 0,
+	    out_type_molecules    : 1,
+	    sortby                : 'rmsdx',
+	    use_mname             : 0,
+	    use_mseqfield         : 1,
+	    use_o_fileIdxField    : 0,
+	    use_o_fileNameField   : 0,
+	    use_o_hitmapfield     : 0,
+	    use_o_hitmapfieldC    : 0,
+	    use_o_hitsizefield    : 0,
+	    use_o_hitsizefieldC   : 0,
+	    use_o_molfield        : 1,
+	    use_o_mseqfield       : 1,
+	    use_o_rmsdfield       : 0,
+	    use_o_rmsdxfield      : 1,
+	    use_o_rowfield        : 0,
+	    use_o_rscore_colfield : 1,
+	    use_o_rscore_sumfield : 1,
+	    use_o_rscore_vecfield : 0,
+	    use_out_dbfile        : 1,
+	    usepsilo              : 0
+	]
+    ];
+
+PH4 Search: START.
+
+  Molecules       Hits   Searched
+       433          0       8.82%
+       910          0      19.22%
+      1844          0      38.05%
+      2780          0      56.80%
+      3709          0      75.69%
+      4600          0      94.00%
+      4887          0     100.00%
+
+PH4 Search: DONE.
+
+TIME: 5.352 sec
+  molecules:         4887       1.095 msec/mol        913.117 mol/sec       
+  conformations:     46613      0.115 msec/conf       8709.454 conf/sec     
+  hit molecules:     0          0.000 msec/hit        0.000 hit/sec         
+  hit conformations: 0          0.000 msec/hit        0.000 hit/sec         
+  all hits:          0          0.000 msec/hit        0.000 hit/sec         

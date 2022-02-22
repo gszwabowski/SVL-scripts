@@ -1,0 +1,42 @@
+//Commentary by GLS 2/16/22
+//
+//This script is used to calculate a Tanimoto Similarity coefficient between
+//a molecule loaded into the first chain and molecules in a database. Make sure
+//to load the molecule you wish to compare to into the system prior to running
+//this script.
+//
+//ARGUMENTS
+//=========
+//mdb: database containing molecules in a field titled 'mol'
+
+function ph4_MACCSBIT_Fingerprint;
+function ph4_MACCSBIT_Tanimoto;
+function ph4_Tanimoto_idx;
+
+global function db_Tanimoto_calc [mdb]
+
+local entries = db_Entries mdb;
+local entry, ent_mol, ent_mol_chain, ent_mol_name, ent_atoms;
+
+//ensure new field in mdb to write Tanimoto coefficients to
+db_EnsureField [mdb, 'Tanimoto Similarity', 'float'];
+
+//calculate fingerprint for molecule loaded into system
+local [lig_atoms] = cAtoms first Chains[];
+local FP = ph4_MACCSBIT_Fingerprint lig_atoms;
+
+//loop through database and calculate a Tanimoto coefficient between each entry
+//and the molecule loaded into the first chain
+for entry in entries loop
+	[ent_mol] = db_ReadFields [mdb, entry, 'mol'];
+	[ent_mol_chain, ent_mol_name] = db_CreateMolecule ent_mol;
+	[ent_atoms] = cAtoms [ent_mol_chain];
+	local FP2 = ph4_MACCSBIT_Fingerprint ent_atoms;
+	local sim = ph4_MACCSBIT_Tanimoto [FP, FP2];
+	db_Write [mdb, entry, tagpoke[[],'Tanimoto Similarity', sim]];
+	oDestroy [ent_mol_chain];
+endloop
+
+write 'Done.\n';
+
+endfunction
