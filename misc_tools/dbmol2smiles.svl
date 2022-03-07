@@ -1,20 +1,39 @@
-#svl
+//Commentary by GLS 2/16/22
+//
+//This script is used to extract SMILES strings from each molecule
+//present in a database. The user can choose to write each entry's
+//SMILES string to a field in the database.
+//
+//ARGUMENTS
+//=========
+//mdb: database containing molecules
+//database_field: database field containing molecules ('mol')
+//db_write: 1 to write entries to database, otherwise use 0
 
 function Close;
-global function dbmol2smiles [mdb, database_field1];
+global function dbmol2smiles [mdb, database_field, db_write];
 
 Close [force:1, viewreset:1, delgobj:1];
 local entries = db_Entries mdb;
 local entry;
 
+if db_write == 1 then
+	db_EnsureField [mdb, 'SMILES', 'char'];
+endif
+
 for entry in entries loop
-        local [ligand] =db_ReadFields [mdb, entry,[database_field1]]; //get structure from fieldname
+        local [ligand] =db_ReadFields [mdb, entry,[database_field]]; //get structure from fieldname
 	local [ligand_chain, ligand_name] =db_CreateMolecule ligand;
 	local smiles = sm_ExtractUnique Atoms[];
 	ligand_name = tok_keep [ligand_name, 16];
-	write ['{}\n', ligand_name];
+	if db_write == 1 then
+		db_Write [mdb, entry, tagpoke[[],'SMILES', string smiles]];
+	endif
+	write ['{}\n', smiles];
 	oDestroy [ligand_chain];			
 
 endloop
+
+write 'Done.\n';
 
 endfunction

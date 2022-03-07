@@ -11,6 +11,8 @@ global function sample_ph4_combinations_allsubsets [features]
 //features: number of features in a ph4
 
 local folders = flist[];
+local foldermask = fext flist[] == '';
+folders = folders | foldermask;
 local folder;
 
 for folder in folders loop

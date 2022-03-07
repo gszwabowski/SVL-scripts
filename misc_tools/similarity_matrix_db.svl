@@ -6,19 +6,27 @@
 //
 //Arguments
 //---------
-//mdb: database containing molecules in the 'mol' field
+//mdb: database containing molecules in the molecule_field field
+//molecule_field: database field containing molecules you wish to compare, typically 'mol'
+//
+//CHANGELOG
+//---------
+//3/7/22: added molecule_field argument, replaced deprecated 'db_CreateMolecule' function with 'mol_Create'
 
 function ph4_MACCSBIT_Fingerprint;
 function ph4_MACCSBIT_Tanimoto;
 function ph4_Tanimoto_idx;
 
-global function similarity_matrix_db [mdb]
+global function similarity_matrix_db [mdb, molecule_field]
 
 Close [force:1, viewreset:1, delgobj:1];  // close any open structures
 
 local entries = db_Entries mdb;
 local ent, ligand_chain, ligand_name, ligand, lig_atoms, i, j;
 local other_ent, ligand_chain2, ligand_name2, ligand2, lig_atoms2;
+
+//start logfile
+logfile 'similarity_matrix_output.txt';
 
 //print header of similarity matrix with entry numbers
 write ['\t'];
@@ -29,20 +37,21 @@ write ['\n'];
 
 //loop to obtain molecular fingerprints for each entry as well as the 6 other entries so similiarities can be calculated
 i=1;
+
 for ent in entries loop
-	[ligand] = db_ReadFields [mdb, ent, 'mol'];
-	[ligand_chain, ligand_name] =db_CreateMolecule ligand;
+	[ligand] = db_ReadFields [mdb, ent, molecule_field];
+	[ligand_chain, ligand_name] =mol_Create ligand;
 	[lig_atoms] = cAtoms [ligand_chain];
-	sleep 0.5;
+	//sleep 0.0001;
 	local FP = ph4_MACCSBIT_Fingerprint lig_atoms;
 	local ent_mask = ent <> entries;
 	local other_ents = entries | ent_mask; //only calculate similarities to other molecules
 	local sim_v = [];
 	for ent in entries loop
-		[ligand2] = db_ReadFields [mdb, ent, 'mol'];
-		[ligand_chain2, ligand_name2] =db_CreateMolecule ligand2;
+		[ligand2] = db_ReadFields [mdb, ent, molecule_field];
+		[ligand_chain2, ligand_name2] = mol_Create ligand2;
 		[lig_atoms2] = cAtoms [ligand_chain2];
-		sleep 0.5;
+		//sleep 0.0001;
 		local FP2 = ph4_MACCSBIT_Fingerprint lig_atoms2;
 		local sim = ph4_MACCSBIT_Tanimoto [FP, FP2];
 		sim_v = cat[sim_v, sim];
@@ -69,5 +78,9 @@ for ent in entries loop
 	oDestroy [ligand_chain];
 	i = inc i;
 endloop
+
+logfile [];
+
+write ['\nDone.\n'];
 
 endfunction

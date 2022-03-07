@@ -26,6 +26,7 @@
 //CHANGELOG
 //---------
 //12/6/21: changed last condition for GPCR chain selection from max length to highest helical proportion.
+//2/22/22: added condition to ensure that only 1 rchain is selected, dropped rchain from chains vector prior to determination of ligand residues
 function Protonate3D;
 global function db_refine_pdb [mdb, mol_field];
 Close [force:1, viewreset:1, delgobj:1];
@@ -75,6 +76,12 @@ for entry in entries loop
 			//rchain = first rchain;
 		//endif
 	endif
+
+	//check to ensure that only 1 rchain is selected
+	if length rchain > 1 then
+		rchain = first rchain;
+	endif
+
 	write ['Receptor chain: {}\n', cName rchain];
 	aSetHidden [cAtoms rchain, 1];
 	rSetRibbonMode [Residues[], 'tube'];
@@ -90,6 +97,10 @@ for entry in entries loop
 	if max rUID rchain_residues1 < 500 and alltrue[rUID rchain_residues > 900] == 0 then //check numbering for cases where fusion partners are not numbered differently
 		oDestroy rchain_residues2;
 	endif
+
+	//remove receptor chain from chains being considered in next loop
+	local chain_mask = chains <> rchain;
+	chains = chains | chain_mask;
 
 	//determine ligand chains
 	for chain in chains loop

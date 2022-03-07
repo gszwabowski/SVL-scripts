@@ -1,0 +1,87 @@
+//Commentary by GLS 12/13/21
+//
+//This function is used to align a database of receptors to a reference
+//alignment that is contained in a .moe file. First, the reference file
+//is opened and its chains are selected to be frozen during the alignment.
+//For each entry in the database, the structure contained in 'mol_field' 
+//is then imported and aligned to the frozen reference chains. The newly
+//aligned chain is then frozen in the same block as the reference chains
+//prior to importing/aligning any new structure sequences.
+//
+//ARGUMENTS
+//=========
+//ref_alignment: .moe file containing a reference alignment
+//mdb: database containing structures you wish to align
+//mol_field: field in mdb containing structures ('mol_Refined')
+//output_file: desired name for output file ending in .moe ('output.moe')
+//
+//CHANGELOG
+//=========
+//2/22/22: added argument to name output file
+
+function pro_Align;
+global function align_new_chains [ref_alignment, mdb, mol_field, output_file]
+
+Close [force:1, viewreset:1, delgobj:1];
+Open ref_alignment;
+local ref_chains = Chains[];
+
+//generate vector for chain_blocks argument
+local i;
+
+local entries = db_Entries mdb;
+local entry, mol, mol_chain, mol_name, chain;
+//local j = 1;
+
+for entry in entries loop
+	local blocks = [];
+	for i = 1, length Chains[], 1 loop
+		blocks = cat [blocks, 1];
+	endloop
+	[mol] = db_ReadFields[mdb, entry, mol_field];
+	[mol_chain, mol_name] =db_CreateMolecule mol;
+	//j = inc j;
+	for chain in diff [Chains[], ref_chains] loop
+		//blocks = cat[blocks, j];
+		blocks = cat[blocks, 2];
+	endloop
+	//print length Chains[];
+	//print blocks;
+	
+	//add new chain to ref_chains prior to next loop
+	ref_chains = Chains[];
+
+	pro_Align [Chains[], [ 
+		mda:'blosum62',
+		mda2:'nuc',
+		method:'progressive',
+		gapstart:10,
+		gapextend:2,
+		gapstart_structural:1,
+		gapextend_structural:0.1,
+		max_iterations:100,
+		failure_count:10,
+		print_table:0,
+		multi_chain:0,
+		retain_frozen_gaps:1,
+		enable_structural:0,
+		realign_only:0,
+		superpose:1,
+		endgap_penalties:0,
+		round_robin:0,
+		shuffle:0,
+		selected_res_only:0,
+		restrict:'All Residues',
+		chain_blocks: blocks,
+		split_by_subunit:0,
+		optimize_gap_penalties:1,
+		verbose:1 ]];
+
+	write ['Done aligning {} to the reference alignment.\n', cName last Chains[]];
+
+	//sleep 100;
+endloop
+
+SaveAs output_file;
+
+endfunction
