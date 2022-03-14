@@ -1,0 +1,27 @@
+//commentary by GLS 3/14/22
+//
+//This script will allow a user to delete all chain tags that lack a ligand
+//(i.e. chain tags with only one chain) from an opened system.
+//
+//Directions: save and load this script, open your .moe file/alignment/etc.,
+//use the command 'remove_ligandless_chains []'.
+
+global function remove_ligandless_chains []
+
+local chains = Chains[];
+local tag_id_numbers = cTagId chains;
+local uniq_tags = uniq tag_id_numbers;
+local ctag;
+
+for ctag in uniq_tags loop
+	local test = tag_id_numbers == ctag;
+	if add test < 2 then // <2 chains means no ligand chain
+		local chain = chains(indexof [ctag, tag_id_numbers]);
+		write ['Destroyed chain {}.\n', indexof[chain, chains]];
+		oDestroy chain;
+	endif
+endloop
+
+write 'Done.\n';
+
+endfunction

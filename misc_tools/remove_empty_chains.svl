@@ -1,0 +1,22 @@
+//commentary by GLS 3/14/22
+//
+//This script will allow a user to delete all empty chains
+//(i.e. chains with no residues) from an opened system.
+//
+//Directions: save and load this script, open your .moe file/alignment/etc.,
+//use the command 'remove_empty_chains []'.
+
+global function remove_empty_chains []
+
+local chains = Chains[];
+local chain;
+
+for chain in chains loop
+	local [residues] = cResidues chain;
+	if isnull residues then
+		oDestroy chain;
+		write ['Destroyed chain {}.\n', indexof[chain, chains]];
+	endif
+endloop
+
+endfunction

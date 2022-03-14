@@ -1,0 +1,62 @@
+global function check_gap_positions []
+
+local chains = Chains[];
+local chain;
+local cMask = [];
+
+//loop thorugh chains to delete null chains
+for chain in chains loop
+	if isnull cat oChildren chain then
+		oDestroy chain;
+	endif
+endloop
+
+//reset chains variable after deletion
+chains = Chains[];
+
+//loop through chains to determine which chains are ligand chains
+//so they can be removed with cMask
+for chain in chains loop
+	local r_type = uniq rType cat oChildren chain;
+	if isnull r_type == 1 or r_type <> 'amino' then
+		cMask = cat [cMask, 0];
+	else
+		cMask = cat [cMask, 1];
+	endif
+endloop
+
+//remove ligand chains from chains
+chains = chains | cMask;
+
+//find max residue position in sequence editor
+local rposns = sort uniq cat rPos oChildren chains;
+print rposns;
+local max_rposn = max rposns;
+local rposn;
+
+local i;
+
+logfile 'log.txt';
+
+write ['residue positions with no residue\n'];
+write['---------------------------------\n'];
+
+//loop through each chain position and chain to determine
+//which residue positions are empty
+for i = 1, max_rposn, 1 loop
+	local pos_count = 0;
+	for chain in chains loop
+	if anytrue [i == cat rPos oChildren chain] then
+		pos_count = inc pos_count;
+	endif
+	endloop
+	if pos_count == 0 then
+		//write ['{}:{}\n', i, pos_count];
+		write ['{}\n', i];
+	endif
+	pos_count = 0;
+endloop
+	
+logfile[];
+
+endfunction
