@@ -1,0 +1,88 @@
+#svl
+//Commentary 4/6/22 GLS
+//This function is used to perform searches of a compound database (compound_db)
+//at a range of specified partial match feature values (start, end) using all
+//pharmacophore models in a directory. This script is an improved version of the 
+//feature_search_dir_7feats.svl script.
+//
+//ARGUMENTS
+//=========
+//compound_db: database you wish to search
+//mseq_field: field in compound_db containing the mseq numbers
+//start: partial match feature value to start searches with
+//end: partial match feature value to end searches with
+//db_outname: name of the database to be included in the ph4 search output db name
+//
+//ex. command to search with 5 features: 
+//	ph4_search_specify_features ['../../../../prestwick_database/prestwick_compounds_confs_final.mdb', 'mseq_renum', 5, 5, 'prestwick']
+//ex. command to search with 5, 6 and 7 features: 
+//	ph4_search_specify_features ['../../../../prestwick_database/prestwick_compounds_confs_final.mdb', 'mseq_renum', 5, 7, 'prestwick']
+
+function ph4_Search;
+global function ph4_search_specify_features [compound_db, mseq_field, start, end, db_outname];
+local files = flist[[],'*.ph4'];
+local ph4fname, pmf_value, output_mdb;
+local output_mdbs = [];
+
+for ph4fname in files loop
+	print ph4fname;
+	for pmf_value = start, end, 1 loop
+
+		// perform ph4_Search
+		ph4_Search [compound_db, ph4fname, [
+			abspos                : 0,
+			action                : 0,
+			descexpr              : '',
+			esel                  : 0,
+			matchsize             : pmf_value,
+			maxconfhits           : 0,
+			maxmolhits            : 0,
+			molfield              : 'mol',
+			mseqfield	      : mseq_field,
+			o_molfield            : 'mol',
+			o_mseqfield           : 'mseq',
+			o_rmsdxfield          : 'rmsdx',
+			o_rscore_colfield     : 'rscore[F#]',
+			o_rscore_sumfield     : 'rscore',
+			out_append            : 0,
+			out_dbfile            : tok_cat [fbase ph4fname, '_', db_outname, '_', totok pmf_value, '.mdb'],
+			out_dbv               : 0,
+			out_type_molecules    : 1,
+			sortby                : 'rmsdx',
+			use_mname             : 0,
+			use_mseqfield         : 1,
+			use_o_fileIdxField    : 0,
+			use_o_fileNameField   : 0,
+			use_o_hitmapfield     : 0,
+			use_o_hitmapfieldC    : 0,
+			use_o_hitsizefield    : 0,
+			use_o_hitsizefieldC   : 0,
+			use_o_molfield        : 1,
+			use_o_mseqfield       : 1,
+			use_o_rmsdfield       : 0,
+			use_o_rmsdxfield      : 1,
+			use_o_rowfield        : 0,
+			use_o_rscore_colfield : 1,
+			use_o_rscore_sumfield : 1,
+			use_o_rscore_vecfield : 0,
+			use_out_dbfile        : 1,
+			usepsilo              : 0]
+			
+		];
+		
+		output_mdbs = cat [output_mdbs, tok_cat [fbase ph4fname, '_', db_outname, '_', totok pmf_value, '.mdb']];
+		endloop
+	endloop
+
+write '\nHits\n';
+
+// loop through ph4_Search output mdbs and get unique hit totals
+for output_mdb in output_mdbs loop
+	local hits = length uniq db_ReadColumn [output_mdb, mseq_field];
+	write ['{} : {}\n', output_mdb, hits];
+endloop
+
+write ['Done.\n'];
+
+endfunction
+

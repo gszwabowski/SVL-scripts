@@ -1,0 +1,42 @@
+// Commentary by GLS 3/30/22
+//
+// This script is used to select all entries in a database (mdb)
+// that possess a certain value or values (tokens) for a Certain
+// database field (field).
+//
+// For example, running the command
+// 	select_db_entries_from_token ['test.mdb', 'function', 'agonist']
+// would select all entries in 'test.mdb' that possess the value
+// 'agonist' in their 'function' field.
+//
+// Another example: running the command
+// 	select_db_entries_from_token ['test.mdb', 'function', ['agonist', 'antagonist]]
+// would select all entries in 'test.mdb' that possess the value
+// 'agonist' OR 'antagonist' in their 'function' field.
+//
+// ARGUMENTS
+// =========
+// mdb: database to select entries from
+// field: field to check for token/tokens
+// tokens: values to check each entry for, entered as a token
+
+global function select_db_entries_from_token [mdb, field, tokens]
+
+// open database, get entries
+Open mdb;
+local mdb_key = db_Open mdb;
+local entries = db_Entries mdb_key;
+local entry;
+
+// loop through entries and select those whose values match the
+// specified token in the specified field
+for entry in entries loop
+	local [entry_record] = db_ReadFields [mdb_key, entry, field];
+	local entry_token = token entry_record;
+	print entry_token;
+	if anytrue [entry_token == tokens] then
+		dbv_EntrySetSelected [mdb_key, entry, 1];
+	endif
+endloop
+
+endfunction

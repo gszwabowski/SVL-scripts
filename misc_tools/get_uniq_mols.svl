@@ -5,32 +5,39 @@
 // ---------
 // dst_mdb: desired name of output database
 // src_mdb: database containing molecules with many entries per mseq
-// mseq_field: database field containing mseq numbers
+// method: 'mseq' or 'token' to determine unique molecules based on mseq or token
+// fieldname: token name of the field to use to determine unique molecules 
 //
 // CHANGELOG
 // ---------
-// 1/5/22: added mseq_field argument for databases with 'mseq_renum' field
+// 1/5/22: added fieldname argument for databases with 'mseq_renum' field
+// 4/6/22: added the ability to get uniq molecules based on any fieldname
 
-global function get_uniq_mols [src_mdb, dst_mdb, mseq_field];
+global function get_uniq_mols [src_mdb, dst_mdb, method, fieldname];
 local field_names, field_types;
 
-local entry, mseq, db_mseq;
+local entry, mseq, db_mseq, string;
 db_Open [dst_mdb, 'create'];
 [field_names, field_types] = db_Fields src_mdb;
 local i = 0;
 
+// ensure that dst_mdb has the same fields as src_mdb
 while i < length field_names loop
 	i = i + 1;
 	db_EnsureField [dst_mdb, field_names(i), field_types(i)];;
-endloop 
+endloop
 
-local mseqs = uniq db_ReadColumn [src_mdb, mseq_field];
-local entries = db_Entries src_mdb;
+// mseq method
+if method == 'mseq' then
+	// get mseqs and entries from src_mdb
+	local mseqs = uniq db_ReadColumn [src_mdb, fieldname];
+	local entries = db_Entries src_mdb;
 
+	// for each entry in src_mdb, determine if it is a unique entry based on mseq value
 	for entry in entries loop
-		db_mseq = db_ReadFields [src_mdb, entry, mseq_field];
+		db_mseq = db_ReadFields [src_mdb, entry, fieldname];
 		print cat ['db_mseq:', db_mseq];
-		if isnull mseqs then 
+		if isnull mseqs then // for first entry
 			break;
 		elseif db_mseq == first mseqs then
 			local entry_record = db_Read [ src_mdb, entry ];
@@ -38,6 +45,36 @@ local entries = db_Entries src_mdb;
 			mseqs = dropfirst mseqs;
 		endif
 	endloop
+
+// token method. works for 'char' field types
+elseif method == 'token' then
+	// get strings from specified fieldname
+	local strings = uniq db_ReadColumn [src_mdb, fieldname];
+	local tokens = [];
+
+	// convert each string to a token for later comparison
+	for string in strings loop
+		local tokname = tok_cat totok string;
+		tokens = cat [tokens, tokname];
+	endloop
+
+	// get entries from src_mdb
+	entries = db_Entries src_mdb;
+	
+	// for each entry in src_mdb, determine if it is a unique entry based on token value
+	for entry in entries loop
+		[tokname] = db_ReadFields [src_mdb, entry, fieldname];
+		tokname = token tokname;
+		print cat ['token:', tokname];
+		if isnull tokens then // for first entry
+			break;
+		elseif tokname == first tokens then
+			entry_record = db_Read [ src_mdb, entry ];
+			db_Write [ dst_mdb, 0, entry_record ];
+			tokens = dropfirst tokens;
+		endif
+	endloop
+endif
 
 Open dst_mdb;
 
