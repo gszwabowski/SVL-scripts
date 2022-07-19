@@ -9,7 +9,7 @@
 //offset5: 5
 
 
-global function pharmcount_redo [mdb, receptor, offset1,offset2,offset3,offset4,offset5]
+global function pharmcount [mdb, receptor, offset1,offset2,offset3,offset4,offset5]
 Close [force:1, viewreset:1, delgobj:1];        // close any open structures
 
 local entry_key, entry_record, values, index, output_token;
