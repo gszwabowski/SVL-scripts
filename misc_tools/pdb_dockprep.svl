@@ -1,0 +1,101 @@
+//Commentary 8/22/22 GLS
+//
+// This script is used to take a database containing structures downloaded from the
+// PDB using pdb_db_import.svl and modify each structure so that only the receptor
+// chain is kept. This script basically cleans each PDB structure of all ligands, ions,
+// waters, etc. so that it can be used for docking. No protonation is performed with this script
+// since the system will be protonated prior to docking with other scripts.
+//
+//
+//ARGUMENTS
+//---------
+//mdb: database with a field containing PDB structures downloaded with pdb_db_import.svl.
+//mol_field: name of the field containing the structures.
+
+global function pdb_dockprep [mdb, mol_field];
+Close [force:1, viewreset:1, delgobj:1];
+local entries = db_Entries[mdb];
+local entry, mol, mol_chain, mol_name, chain;
+
+//ensure mdb has a mol field to import to
+db_EnsureField [mdb, 'mol_receptor', 'molecule'];
+
+for entry in entries loop
+	[mol] = db_ReadFields[mdb, entry, mol_field];
+	[mol_chain, mol_name] =db_CreateMolecule mol;
+	View[];
+	local chains = Chains[];
+	local i;
+	local chain_lengths = [];
+	local helix_props = [];
+	//find chain lengths, then find chain name suffixed ".R". if ".R" chain is not present,
+	//use the chain with the highest proportion of helical residues. Else, GPCR will be the 
+	//longest chain.
+	for i = 1, length chains, 1 loop
+		local chain_length = length cat cResidues chains(i);
+		chain_lengths = cat [chain_lengths, chain_length];
+		if length cat oChildren chains(i) < 100 then //if the chain has less than 100 residues
+			local helix_prop = 0.00;
+		else
+			helix_prop = add(rActualSegment cat oChildren chains(i) == 'helix') / length cat oChildren chains(i);
+		endif
+		helix_props = cat [helix_props, helix_prop];
+	endloop
+
+	local chain_names = cName chains;
+	local rmask = fext cName chains == 'R';
+	if anytrue rmask and add rmask > 1 then //if there's more than 1 .R chain
+		local rchain = chains | rmask;
+		local rchain_lengths = chain_lengths | rmask;
+		local length_mask = rchain_lengths == max rchain_lengths;
+		rchain = rchain | length_mask;
+	elseif anytrue rmask then //if there's only 1 .R chain
+		rchain = chains | rmask;
+	else //if there's no .R chain
+		local hprop_mask = helix_props == max helix_props;
+		rchain = chains | hprop_mask;
+	endif
+
+
+	//check to ensure that only 1 rchain is selected
+	if length rchain > 1 then
+		rchain = first rchain;
+	endif
+
+	write ['Receptor chain: {}\n', cName rchain];
+	aSetHidden [cAtoms rchain, 1];
+	rSetRibbonMode [Residues[], 'tube'];
+	
+	//remove fusion partners
+	local [rchain_residues] = cResidues rchain;
+	local rUID_resmask = rUID rchain_residues < 900;
+	local rUID_fusionmask = rUID rchain_residues > 900;
+
+	local rchain_residues1 = rchain_residues | rUID_resmask;
+	local rchain_residues2 = rchain_residues | rUID_fusionmask;
+	
+	if max rUID rchain_residues1 < 500 and alltrue[rUID rchain_residues > 900] == 0 then //check numbering for cases where fusion partners are not numbered differently
+		oDestroy rchain_residues2;
+	endif
+
+	//remove receptor chain from chains being considered in next loop
+	local chain_mask = chains <> rchain;
+	chains = chains | chain_mask;
+
+	//delete other chains
+	for chain in chains loop
+		if chain <> rchain then
+			oDestroy chain;
+		endif
+	endloop
+
+
+	//extract refined receptor, add to entry under the "mol_Refined" field
+	local mol_receptor = mol_Extract Chains[];
+	db_Write[mdb, entry, [mol_receptor: mol_receptor]];
+	Close [force:1, viewreset:1, delgobj:1];
+endloop
+
+write['Done.\n'];
+
+endfunction

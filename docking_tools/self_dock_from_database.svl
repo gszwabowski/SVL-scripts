@@ -1,0 +1,90 @@
+// Commentary 8/9/22 GLS
+// This script is used to generate batch files that will allow
+// for self docking of ligand-receptor complexes in a database.
+//
+// ARGUMENTS
+// =========
+// mdb: database containing a field with ligand-receptor complexes
+// receptor_field: name of the field containing ligand-receptor complexes
+function Protonate3D;
+function ViewCenter;
+global function self_dock_from_database [mdb, receptor_field]
+
+Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+
+local entries = db_Entries mdb;
+local entry, rec_chain, lig_chain, rec_name;
+
+for entry in entries loop
+	// get receptor in complex with ligand from database and open it
+	local [receptor] =db_ReadFields [mdb, entry, [receptor_field]];
+	[[rec_chain, lig_chain], rec_name] = db_CreateMolecule receptor;
+
+	// center view, show ribbons instead of atoms for receptor chain
+	ViewCenter[];
+	local [rec_residues] = oChildren rec_chain;
+	rSetRibbonMode [rec_residues, 'line'];
+	rSetRibbonEnable [rec_residues, 1];
+	aSetHidden[oChildren rec_residues, 1];
+	
+	// protonate system
+	local chains = Chains[];
+	local atoms = Atoms[];
+	Protonate3D [atoms,atoms,atoms,[],[],[]];
+
+	print rec_name;
+
+	// run Site Finder, click Apply, check 'select contact atoms'
+	local tcount = 0;
+	local tatoms = [];
+	loop
+		tcount = tcount + 1;
+		Open '$MOE/svl/run/sitefind.svl';
+		local wkey2 = WindowKeyList[];
+		if tcount = 1 then 
+			WindowTrigger [wkey2, [panel:'Apply']];
+		endif
+		
+		WindowTrigger [wkey2, [disp_aselect:1]];
+		sleep 0.5;
+	if notnull SelectedAtoms[] then break;
+	endif
+	endloop;
+
+	sleep 1;
+	WindowDestroy wkey2;
+
+	// extend selection to residues
+	local atom_set = Atoms[];
+	local sel_atoms = Atoms [] | aSelected Atoms [];
+	local residues = uniq oParent sel_atoms;
+	local new_atoms = cat oChildren residues;
+	local select_atoms = join [atom_set, new_atoms];
+	aSetSelected [select_atoms, 1];
+
+	// open dock UI
+	run '$MOE/svl/run/dock_ui.svl'; // uses edited dock_ui.svl to prevent asking for overwrites
+	local wkey = WindowKeyList[];
+	WindowSetData [wkey, ['siteset': 6]]; // set docking site as selected atoms
+	WindowSetData [wkey, ['maxpose': 400]]; // set max placement poses to 400
+	WindowSetData [wkey, ['refine': 1]]; // set refinement to induced fit
+	WindowSetData [wkey, ['remaxpose': 5]]; // set max refined poses to 5
+	//WindowSetData [wkey, ['outfile': tok_cat[rec_name, '_selfdock.mdb']]];
+	local jobname = tok_cat [rec_name, '_selfdock.mdb'];
+	WindowSetData [wkey, ['outfile': jobname]];
+
+	// click Batch... and then create batch file
+	WindowTrigger [wkey, ['panel': 'Batch...']];
+	sleep 1;
+	WindowTrigger[first WindowKeyList[], ['Create':1]];
+	sleep 1;
+	WindowDestroy wkey;
+
+	loop
+	until isnull WindowNameList[] == 1
+	endloop
+	
+	Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+endloop
+
+endfunction

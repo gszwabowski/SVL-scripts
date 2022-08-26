@@ -3,7 +3,7 @@
 //
 //ARGUMENTS
 //=========
-//mdb1: original database (pre conf. search)
+//mdb1: database used as input for a conformational search
 //mdb2: database containing conformations
 //=========
 //Output: molecules that are present in mdb1 but not mdb2 (based on

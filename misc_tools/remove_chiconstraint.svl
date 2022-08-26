@@ -1,11 +1,11 @@
 #svl
-#Commentary by Greg Szwabowski 12/4/2020
-#This script is used to remove chirality constraints from molecules in a database.
-#Arguments
-#---------
-#mdb: database containing molecules
-#field1: DB field containing molecules
-#field2: desired name of new database field containing molecules stripped of chirality constraints.
+//Commentary by Greg Szwabowski 12/4/2020
+//This script is used to remove chirality constraints from molecules in a database.
+//Arguments
+//---------
+//mdb: database containing molecules
+//field1: DB field containing molecules
+//field2: desired name of new database field containing molecules stripped of chirality constraints.
 
 global function remove_chiconstraint [mdb, field1, field2]
 

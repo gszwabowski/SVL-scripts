@@ -1,3 +1,12 @@
+// Commentary 8/26/22 GLS
+// This script allows the user to select a subset of entries from a MOE database and put them into a newly created database.
+//
+//ARGUMENTS
+//=========
+//mdb: filename of the database to select a subset of entries from
+//output_mdb: name of the database to be created that will contain the subset of entries from mdb
+//entry_numbers: mdb entry numbers to subset, entered as a vector (e.g. [33, 56, 72])
+
 global function db_subset_entries [mdb, output_mdb, entry_numbers];
 
 local field_names, field_types;

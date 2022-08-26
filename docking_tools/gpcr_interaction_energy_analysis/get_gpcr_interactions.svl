@@ -1,0 +1,252 @@
+// Commentary by GLS 5/9/22
+//
+// This script is used to calculate interaction energies for all ligand:receptor pairings within a .moe alignment.
+// Prior to using this script, the gen_tm_database.svl script must first be used to generate a database containing
+// 5 fields for each Ballesteros-Weinstein (BW) numbered residue in transmembrane domains 1-7. This database serves
+// as the output_mdb argument for this script. The ordering of the PDBid entries in this database MUST match the
+// ordering of the structures in your alignment.
+//
+// For each ligand:receptor pairing in the alignment, this script will first identify the receptor chain. For each
+// residue in TM domains 1-7 of the receptor chain (denoted by the indices in indices_mdb), 5 cells are filled in 
+// the database that denote:
+//
+//	1. overall interaction energy between the residue and its receptor's ligand
+//	2. the type of the 1st interaction made between the residue and ligand
+//	3. the interaction energy of the 1st interaction
+//	4. the type of the 2nd interaction made between the residue and ligand
+//	5. the interaction energy of the 2nd interaction
+//
+// Interaction scoring follows these rules:
+//
+//	1. overall interaction energies are summed.
+//	2. if a residue has no interaction energy and no interaction type, its interactions are scored as 0.
+//	3. if a residue has an interaction type but no interaction energy, it is scored as 0.
+//  4. if a residue does not exist in a structure, its interaction is scored as NaN.
+//
+// Since residue numbering varies from structure to structure, most structures will not have all TM residues scored.
+// Once initial residue scoring is complete, empty cells in 'float' type fields (representing score fields) will be
+// filled with NaN values. Additionally, empty cells in 'char' type fields (representing interaction types) will be
+// filled with NA values.
+//
+// ARGUMENTS
+// =========
+// alignment: .moe file containing ligand:receptor pairings. The ordering of the structures in this alignment must match the ordering of the PDBids in output_mdb.
+// indices_mdb: database containing indices for the start/x.50/end residues of each structure's TM domains.
+// output_mdb: database generated using gen_tm_database.svl. Calculations using this script will be written to this database.
+//
+// ex. command: get_GPCR_interactions ['../alignment_output_281_human_51_nonhuman_59_refined_1to1.moe', 'gpcr db tm evaluation 050322_gs.mdb', '364_interaction_energies_state_function_v4.mdb']
+
+function prolig_Calculate;
+global function get_GPCR_interactions[alignment, indices_mdb, output_mdb]
+
+// from prolig2d.svl
+const COLLAPSE_MULT_ATOM_TO_NEAREST = 1;
+local itypes = ['Hbond', 'Metal', 'Ionic', 'Covalent', 'Arene', 'Distance'];
+local iopt = [
+	emin_hb:	    minE[-0.1, 0.10],
+	emin_hpi:	    minE[-0.1, 0.10],
+	emin_ion:	    0.10,
+	distance_threshold: 4.5, //4.5 default
+	layoutrechb:	    0	// incl. rec-rec hbond in layout
+	];
+
+//from prolig2d.svl, calculates strong interactions
+local function collapse_mult_atom_interactions [a1, a2]
+
+    	local function getnearatoms [a, b]
+	a = stretch [a, length b];
+	b = resize  [b, length a];
+	local min = x_min add sqr sub [aPos a, aPos b];
+	return [a(min), b(min)];
+	endfunction
+
+    	if COLLAPSE_MULT_ATOM_TO_NEAREST then
+		local am_mask = gtE [app length a1, 1] or gtE [app length a2, 1];
+		local am1 = a1 | am_mask;
+		local am2 = a2 | am_mask;
+		[am1, am2] = tr app getnearatoms tr [am1, am2];
+		a1 | am_mask = am1;
+		a2 | am_mask = am2;
+    	else
+		a1 = app first a1;
+		a2 = app first a2;
+    	endif
+    	return [a1, a2];
+endfunction
+
+// end from prolig2d.svl
+
+// close open structures
+Close [force:1, viewreset:1, delgobj:1];
+
+// open alignment
+Open alignment;
+
+local chains = Chains[];
+local i, chain, entry, a;
+local TM_start, TM_x50, TM_end, TM_num;
+
+// determine chain lengths
+local chain_lengths = [];
+for i = 1, length chains, 1 loop
+	local chain_length = length cat cResidues chains(i);
+	chain_lengths = cat [chain_lengths, chain_length];
+endloop
+
+// get receptor chains
+local rmask = chain_lengths > 1;
+local rchains = chains | rmask;
+
+// get ligand chains
+local lmask = chain_lengths == 1;
+local lchains = chains | lmask;
+
+// get entries of indices_mdb
+local idx_entries = db_Entries[indices_mdb];
+
+//get entries of output_mdb
+local output_entries = db_Entries[output_mdb];
+
+// loop through the 7 TM domains
+for TM_num = 1, 7, 1 loop
+	//start entry count
+	local entry_count = 1;
+
+	// loop through chains and calculate interaction energies
+	for chain in rchains loop
+		write ['Writing information for entry {} for TM {} ...\n', entry_count, TM_num];
+		write['\nresidue\tE(kcal/mol)\ttype\n'];
+		write['-------\t-----------\t----\n'];
+		
+		// increase entry count for next loop
+		entry_count = inc entry_count;
+
+		// get residues and rUID of chain
+		local [residues] = cResidues chain;
+		local res_ids = rUID residues;
+
+		// get ligand atoms
+		local l_atoms = cat cAtoms chains(indexof[chain, chains] + 1);
+
+		// info read from indices_mdb
+		TM_start = db_ReadFields[indices_mdb, idx_entries(indexof[chain, rchains]), tok_cat['TM', totok TM_num, '_start']];
+		TM_x50 = db_ReadFields[indices_mdb, idx_entries(indexof[chain, rchains]), tok_cat['TM_', totok TM_num, '.50']];
+		TM_end = db_ReadFields[indices_mdb, idx_entries(indexof[chain, rchains]), tok_cat ['TM', totok TM_num, '_end']];
+		//print [indexof[chain, rchains], TM_start, TM_x50, TM_end];
+
+		// loop through residues from start of TM to end of TM and calculate interaction energies
+		for a = TM_start, TM_end, 1 loop
+			
+			// determine BW number of current residue based on current residue number
+			if a <= 50 then
+				local BW_resnum = 50 - (TM_x50 - a);
+			elseif a == TM_x50 then
+				BW_resnum = 50;
+			elseif a > 50 then
+				BW_resnum = 50 + (a - TM_x50);
+			endif
+			//write ['Calculating interactions for residue {} (BW #: {})', 
+			//print tok_cat [totok TM_num, '.', totok BW_resnum]; // check BW residue number of current residue
+			//print[a, res_ids];
+			// handle cases where residues are not in the structure
+			if isnull join[a, res_ids] then
+				local s_score = [];
+				local int_types = [];
+			else
+				local residue = residues(indexof[a, res_ids]);
+				local r_atoms = cat oChildren residue;
+				//aSetSelected[r_atoms, 1];
+				local r_name = rName residue;
+				local r_UID = rUID residue;
+				//rSetSelected[residue, 1]; // check if residue is being selected
+				local iract = prolig_Calculate [itypes, l_atoms, r_atoms, iopt];
+				local [iract_2, iract_3] = [iract(2), iract(3)];
+				[iract_2,iract_3] = collapse_mult_atom_interactions [iract(2),iract(3)];
+				local lrmask = indexof [iract_2, l_atoms] and indexof [iract_3, r_atoms];
+				local rlmask = indexof [iract_3, l_atoms] and indexof [iract_2, r_atoms];
+				local mask = andE [indexof [iract(1), ['Hbond', 'Metal', 'Ionic', 'Covalent']],lrmask or rlmask];
+				local arene_mask = andE [iract(1) == 'Arene', lrmask or rlmask];
+				mask = mask or arene_mask;
+				local s_lim = select [iract(2), iract(3), lrmask] | mask;	// multi atom
+				local s_rim = select [iract(3), iract(2), lrmask] | mask;	// for arene
+				s_lim = split [indexof [cat s_lim, l_atoms], app length s_lim];
+				s_rim = split [indexof [cat s_rim, r_atoms], app length s_rim];
+				local s_mask = pack mask;
+				local s_li = indexof [select [iract_2, iract_3, lrmask] | mask, l_atoms];
+				local s_ri = indexof [select [iract_3, iract_2, lrmask] | mask, r_atoms];
+				local s_ui = uniq[s_ri];   	
+				local s_type = rep ['', l_length iract];
+				s_type | iract(1) == 'Hbond' and lrmask = 'hbdon';
+				s_type | iract(1) == 'Hbond' and rlmask = 'hbacc';
+				s_type | iract(1) == 'Metal' = 'ion';
+				s_type | iract(1) == 'Ionic' = 'ion';
+				s_type | iract(1) == 'Covalent' = 'cov';
+				s_type | iract(1) == 'Arene' = 'arene';
+				s_type = s_type | mask;
+				s_score = iract(4) | mask;
+				[s_mask, s_li, s_ri, s_ui, s_type, s_score] = [s_mask, s_li, s_ri, s_ui, s_type, s_score] || [s_li and s_ri];
+				int_types = iract(1);
+				local int_score = first s_score;
+				//print ['residue:', tok_cat [totok TM_num, '.', totok BW_resnum], iract(1), s_score];
+
+				// deselect current residue atoms
+				//aSetSelected[r_atoms, 0];
+
+			endif
+
+			// calculate sum of interaction energies. if s_score is null, then interaction energy is written as 0
+			if notnull s_score then
+				local s_score_sum = add s_score;
+			else
+				s_score_sum = 0;
+			endif
+			
+			//print['s_score:', s_score, 'sum:', s_score_sum];
+
+			// write sum of interaction energies to the database
+			db_Write [output_mdb, output_entries(indexof[chain, rchains]), tagpoke[[], tok_cat [totok TM_num, '.', totok BW_resnum, '_intenergysum'], s_score_sum]];
+
+			// loop through s_scores and int_types and determine which information to write to the database
+			for i = 1, 2, 1 loop // i <= 3 keeps loop from writing more than 2 interaction energies
+				if isnull s_score(i) and isnull int_types(i) and i <= 2 then // interactions with no interaction score nor interaction type get scored as 0, NA for interaction type
+					//print[s_score(i), int_types(i), tok_cat [totok TM_num, '.', totok BW_resnum], iract(1)];
+					db_Write [output_mdb, output_entries(indexof[chain, rchains]), tagpoke[[], tok_cat [totok TM_num, '.', totok BW_resnum, '_intenergy', totok i], 0]];
+					db_Write [output_mdb, output_entries(indexof[chain, rchains]), tagpoke[[], tok_cat [totok TM_num, '.', totok BW_resnum, '_inttype', totok i], string 'None']];
+					//write['{}\t{f.1}\t\t{}\n',tok_cat [totok TM_num, '.', totok BW_resnum] , s_score(i), int_types(i)];
+				elseif isnull s_score(i) and notnull int_types(i) and i <= 2 then // interactions with no interaction score but an interaction type get scored as 0
+					//print[s_score(i), int_types(i), tok_cat [totok TM_num, '.', totok BW_resnum], iract(1)];
+					db_Write [output_mdb, output_entries(indexof[chain, rchains]), tagpoke[[], tok_cat [totok TM_num, '.', totok BW_resnum, '_intenergy', totok i], 0]];
+					db_Write [output_mdb, output_entries(indexof[chain, rchains]), tagpoke[[], tok_cat [totok TM_num, '.', totok BW_resnum, '_inttype', totok i], string int_types(i)]];
+					//write['{}\t{f.1}\t\t{}\n',tok_cat [totok TM_num, '.', totok BW_resnum] , s_score(i), int_types(i)];
+				elseif i <= 2 then
+					//print[s_score(i), int_types(i), tok_cat [totok TM_num, '.', totok BW_resnum], iract(1)];
+					db_Write [output_mdb, output_entries(indexof[chain, rchains]), tagpoke[[], tok_cat [totok TM_num, '.', totok BW_resnum, '_intenergy', totok i], s_score(i)]];
+					db_Write [output_mdb, output_entries(indexof[chain, rchains]), tagpoke[[], tok_cat [totok TM_num, '.', totok BW_resnum, '_inttype', totok i], string int_types(i)]];
+					write['{}\t{f.1}\t\t{}\n',tok_cat [totok TM_num, '.', totok BW_resnum] , s_score(i), int_types(i)];
+				endif
+			endloop
+		endloop
+	write '\n';
+	endloop
+endloop
+
+write 'Done calculating interaction scores. Filling all other fields with NA values...\n';
+
+// fill all other inttype fields with NA, all other intenergy fields with NaN
+local output_fields = dropfirst dropfirst first db_Fields output_mdb;
+local field;
+for field in output_fields loop
+	for entry in output_entries loop
+		local [record] = db_ReadFields [output_mdb, entry, field];
+		print [record, field, indexof[entry, output_entries]];
+		if isnull record and db_FieldType [output_mdb, field] == 'char' then
+			db_Write [output_mdb, entry, tagpoke[[], field, string 'NA']];
+		elseif isnull record and db_FieldType [output_mdb, field] == 'float' then
+			db_Write [output_mdb, entry, tagpoke[[], field, NaN]];
+		endif
+	endloop
+endloop
+
+write 'Done.\n';
+
+endfunction

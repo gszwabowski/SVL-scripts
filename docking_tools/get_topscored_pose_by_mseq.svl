@@ -1,0 +1,57 @@
+// Commentary by GLS 7/25/22
+//
+// This script is used to go through each docking database in a directory,
+// get the best scoring pose for each mseq number in each docking database,
+// and write each best scoring pose to an output database.
+//
+// ARGUMENTS
+// =========
+// output_prefix: desired prefix of output database
+
+global function get_topscored_pose_by_mseq [output_prefix]
+
+local mseq, mdb, entry, mseq_entry;
+local field_names, field_types;
+
+// create mdb to put top scoring entries in
+
+// get list of mdbs in directory
+local mdbs = flist[[],'*.mdb'];
+
+// create output_mdb and get fieldnames from first mdbs
+local namebase = tok_drop [fbase first mdbs, -2];
+local output_mdb = db_Open [tok_cat[output_prefix, '_topscored_poses.mdb'],'create'];
+[field_names, field_types] = db_Fields first mdbs;
+
+//create fields from first mdbs in output_mdb
+local i;
+for i = 1, length field_names, 1 loop
+	db_EnsureField [output_mdb, field_names(i), field_types(i)];
+endloop
+
+// loop through each mdb file
+for mdb in mdbs loop
+	write ['Getting top scored pose from {}.\n', mdb];
+	local entries = db_Entries mdb;
+	local mseqs = uniq db_ReadColumn [mdb, 'mseq'];
+	// loop through each mseq
+	for mseq in mseqs loop
+		local mseq_entries = [];
+		// loop through each entry
+		for entry in entries loop
+			// get entries matching mseq
+			if db_ReadFields [mdb, entry, 'mseq'] == mseq then
+				mseq_entries = cat[mseq_entries, entry];
+			endif
+		endloop
+			
+		//get the first entry matching the mseq's entry record, write it to output_mdb
+		local top_entry = first mseq_entries;
+		local entry_record = db_Read [mdb, top_entry];
+		db_Write [output_mdb, 0, entry_record ];
+	endloop
+endloop
+
+write ['Done. Poses written to {}\n', tok_cat[output_prefix, '_topscored_poses.mdb']];
+	
+endfunction

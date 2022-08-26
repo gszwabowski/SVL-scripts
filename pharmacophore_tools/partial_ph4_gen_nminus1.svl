@@ -1,7 +1,7 @@
 function ph4_EditorWkeyList;
 function ph4_EditorGetData;
 function fwrite_PH4;
-global function sample_ph4_combinations [features]
+global function sample_ph4_combinations_nminus1 [features]
 //Commentary 5/27/21 GS
 //This script will create a folder for partial ph4 files, cd into it, then create "partial" pharmacophores
 //by sampling combinations of n-1 pharmacophore features. For example, using this with a directory containing

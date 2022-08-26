@@ -33,7 +33,7 @@ local entry;
 for entry in entries loop
 	local [entry_record] = db_ReadFields [mdb_key, entry, field];
 	local entry_token = token entry_record;
-	print entry_token;
+	//print entry_token;
 	if anytrue [entry_token == tokens] then
 		dbv_EntrySetSelected [mdb_key, entry, 1];
 	endif

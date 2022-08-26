@@ -6,7 +6,7 @@
 //ARGUMENTS
 //----------
 //receptor: receptor model, should end in minrec.moe (receptor structure written to disk during MCSS)
-//mdb: output.mdb, database containing fragments used to annotate each pharmacophore model's features
+//mdb: database containing fragments used to annotate each pharmacophore model's features
 
 function prolig_Calculate;
 global function s_score_calc [receptor, mdb];

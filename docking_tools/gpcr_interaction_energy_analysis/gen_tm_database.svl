@@ -1,0 +1,91 @@
+// Commentary by GLS 5/9/22
+//
+// This script is used to add fields representing Ballesteros-Weinstein residue
+// numbers to a database based on given maximum start (max_start) and maximum end (max_end)
+// values for a set of GPCR with indexed positions. For example, our work with 391 GPCR structures
+// determined that the earliest start point for TM1 across all studied structures was 29 residues
+// behind TM1 residue 1.50. This work also identified that the latest end point for TM1 was 10 residues 
+// ahead of TM1 residue 1.50. Given the command:
+//
+//	gen_TM_database['../gpcr db tm evaluation 050322_gs.mdb',['index','PDBID'],'364_interaction_energies.mdb', 1, 29, 10]
+//
+// this script will fill a database with fields meant to be filled with interaction types and energies
+// for residues 1.21 (50 - max_start) to 1.60 (50 + max_end). If the database does not already exist,
+// it will be created.
+//
+// ARGUMENTS
+// =========
+// idx_mdb: database containing a field numbering each entry as well as a field containing PDB id codes
+// fields: names of the fields containing entry numbers/PDB id codes in idx_mdb (ex. ['index', 'PDBID'])
+// mdb: desired filename of database to be created
+// TM_num: TM domain (1,2,3,4,5,6 or 7) to create fields for
+// max_start: abs. value of the maximum difference in residue position between TM x.50 and the first residue of TM x across all structures
+// max_end: abs. value of the maximum difference in residue position between TM x.50 and the last residue of TM x across all structures
+//
+// GPCR DB PROJECT COMMANDS
+// ========================
+// gen_TM_database ['selfdock_topscored_poses.mdb', ['index', 'PDBID'], 'selfdock_interaction_energies.mdb', 1, 29, 10]
+// gen_TM_database ['selfdock_topscored_poses.mdb', ['index', 'PDBID'], 'selfdock_interaction_energies.mdb', 2, 16, 20]
+// gen_TM_database ['selfdock_topscored_poses.mdb', ['index', 'PDBID'], 'selfdock_interaction_energies.mdb', 3, 31, 21]
+// gen_TM_database ['selfdock_topscored_poses.mdb', ['index', 'PDBID'], 'selfdock_interaction_energies.mdb', 4, 21, 19]
+// gen_TM_database ['selfdock_topscored_poses.mdb', ['index', 'PDBID'], 'selfdock_interaction_energies.mdb', 5, 21, 37]
+// gen_TM_database ['selfdock_topscored_poses.mdb', ['index', 'PDBID'], 'selfdock_interaction_energies.mdb', 6, 35, 18]
+// gen_TM_database ['selfdock_topscored_poses.mdb', ['index', 'PDBID'], 'selfdock_interaction_energies.mdb', 7, 29, 18]
+
+function db_ImportDB;
+global function gen_TM_database [idx_mdb, fields, mdb, TM_num, max_start, max_end]
+
+// create a database to fill with fields representing TM residue
+if notnull flist[[], mdb] == 0 then
+	local mdb_key = db_Open [mdb, 'create'];
+endif
+
+local TM_50 = TM_num + 0.50;
+local min_res_num = 50 - max_start;
+local max_res_num = 50 + max_end;
+local i, tok_res;
+
+// import fields from idx_mdb if they are not present in the database
+if isnull join [fields, first db_Fields[mdb]] then
+	db_ImportDB [mdb, idx_mdb, fields, fields, ['int', 'char'], []];
+endif
+
+// create fields for the minimum TM residue to TM X.50 - 0.01
+for i = min_res_num, 50, 1 loop
+	tok_res = totok i;
+	db_EnsureField [mdb, tok_cat[totok TM_num, '.',  tok_res, '_intenergysum'], 'float'];
+	db_EnsureField [mdb, tok_cat[totok TM_num, '.',  tok_res, '_inttype1'], 'char'];
+	db_EnsureField [mdb, tok_cat[totok TM_num, '.', tok_res,  '_intenergy1'], 'float'];
+	db_EnsureField [mdb, tok_cat[totok TM_num, '.',  tok_res, '_inttype2'], 'char'];
+	db_EnsureField [mdb, tok_cat[totok TM_num, '.', tok_res,  '_intenergy2'], 'float'];
+	//db_EnsureField [mdb, tok_cat[totok TM_num, '.',  tok_res, '_inttype3'], 'char'];
+	//db_EnsureField [mdb, tok_cat[totok TM_num, '.', tok_res,  '_intenergy3'], 'float'];
+endloop
+
+// create fields for the x.50 residue
+db_EnsureField [mdb, tok_cat[tok_cat[totok TM_50, '0'], '_intenergysum'], 'float'];
+db_EnsureField [mdb, tok_cat[tok_cat[totok TM_50, '0'], '_inttype1'], 'char'];
+db_EnsureField [mdb, tok_cat[tok_cat[totok TM_50, '0'], '_intenergy1'], 'float'];
+db_EnsureField [mdb, tok_cat[tok_cat[totok TM_50, '0'], '_inttype2'], 'char'];
+db_EnsureField [mdb, tok_cat[tok_cat[totok TM_50, '0'], '_intenergy2'], 'float'];
+//db_EnsureField [mdb, tok_cat[tok_cat[totok TM_50, '0'], '_inttype3'], 'char'];
+//db_EnsureField [mdb, tok_cat[tok_cat[totok TM_50, '0'], '_intenergy3'], 'float'];
+
+// create fields for TM X.50 - 0.01 to the maximum TM residue
+for i = 51, max_res_num, 1 loop
+	tok_res = totok i;
+	db_EnsureField [mdb, tok_cat[totok TM_num, '.', tok_res,  '_intenergysum'], 'float'];
+	db_EnsureField [mdb, tok_cat[totok TM_num, '.',  tok_res, '_inttype1'], 'char'];
+	db_EnsureField [mdb, tok_cat[totok TM_num, '.', tok_res,  '_intenergy1'], 'float'];
+	db_EnsureField [mdb, tok_cat[totok TM_num, '.',  tok_res, '_inttype2'], 'char'];
+	db_EnsureField [mdb, tok_cat[totok TM_num, '.', tok_res,  '_intenergy2'], 'float'];
+	//db_EnsureField [mdb, tok_cat[totok TM_num, '.',  tok_res, '_inttype3'], 'char'];
+	//db_EnsureField [mdb, tok_cat[totok TM_num, '.', tok_res,  '_intenergy3'], 'float'];
+endloop
+
+write 'Done.\n';
+
+endfunction
+
+
+

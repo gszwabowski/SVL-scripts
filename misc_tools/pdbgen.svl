@@ -17,30 +17,31 @@ function Close;
 function pro_Superpose;
 function pro_Align;
 global function pdbgen [reference_file, database_file, database_field1]
-	Close [force:1, viewreset:1, delgobj:1];  // close any open structures
-	local mdb_key = db_Open [database_file, 'read-write'];
- 	local entry_key, receptor, receptor_chain, receptor_name, ref_chains, id, a, idfield;   	
-	local entries = db_Entries mdb_key;
+Close [force:1, viewreset:1, delgobj:1];  // close any open structures
+local mdb_key = db_Open [database_file, 'read-write'];
+local entry_key, receptor, receptor_chain, receptor_name, ref_chains, id, a, idfield;   	
+local entries = db_Entries mdb_key;
 		
 //  loop through the database to read each receptor
-        	for entry_key in entries loop
-		Open reference_file;
-		print Chains[];
-		[receptor] =db_ReadFields [mdb_key, entry_key, [database_field1]];
-		[receptor_chain, receptor_name] =db_CreateMolecule receptor;
+for entry_key in entries loop
+	Open reference_file;
+	print Chains[];
+	[receptor] =db_ReadFields [mdb_key, entry_key, [database_field1]];
+	[receptor_chain, receptor_name] =db_CreateMolecule receptor;
 
-//	align & superpose chains
-		pro_Align[Chains[]];
-		pro_Superpose[[Chains[]], [auto_associate:1, accent_conserved: 1]];
+	//	align & superpose chains
+	pro_Align[Chains[]];
+	pro_Superpose[[Chains[]], [auto_associate:1, accent_conserved: 1]];
 
-//delete reference file & ligand
-		oDestroy (get [(Chains[]), 1]);
-		oDestroy (get [(Chains[]), 1]);
+	//delete reference file & ligand
+	oDestroy (get [(Chains[]), 1]);
+	oDestroy (get [(Chains[]), 1]);
 		
-//save .pdb
-		print Chains[];	
-		WritePDB [];
-///delete receptor
-		oDestroy receptor_chain;
-	endloop
+	//save .pdb
+	print Chains[];	
+	WritePDB [];
+
+	///delete receptor
+	oDestroy receptor_chain;
+endloop
 endfunction

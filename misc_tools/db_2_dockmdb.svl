@@ -1,5 +1,6 @@
 #svl
-//This script will allow you to convert a MOE database for use with the database broswer in MOE (for analyzing docking results).
+//This script will allow a user to convert a MOE database to a docking database so both receptor structures and
+// docked ligand poses within the database can be viewed together with the MOE database browser.
 global function db_2_dockmdb [mdb]
 
 db_SetEnv [mdb, '{mol}dbvbrowse_Dock', 'ligand'];

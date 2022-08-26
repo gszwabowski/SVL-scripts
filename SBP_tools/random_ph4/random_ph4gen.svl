@@ -18,8 +18,6 @@ function ph4_EditorGetData;
 function fwrite_PH4;
 function ph4_Search;
 
-
-
 global function random_ph4gen [receptor, database_file, samp_num, iter, n]
 //run in subfolder to keep pharmacophore files contained
 //receptor is *_minrec.moe, database_file is *_output.mdb

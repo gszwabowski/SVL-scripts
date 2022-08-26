@@ -1,13 +1,13 @@
 #svl
-#Commentary by Greg Szwabowski 12/4/2020
-#This function allows for the rescoring of molecules in any database using MOE GBVI scoring.
-#Arguments
-#---------
-#database_file: database file you wish to rescore
-#database_field1: DB field containing ligand
-#database_field2: DB field containing receptor
-#output_mdb: name of output for each molecule's rescoring (temp.mdb will work)
-#cat_mdb: desired name of output database containing all rescored molecules
+//Commentary by Greg Szwabowski 12/4/2020
+//This function allows for the rescoring of molecules in any database using MOE GBVI scoring.
+//Arguments
+//---------
+//database_file: database file you wish to rescore
+//database_field1: DB field containing ligand
+//database_field2: DB field containing receptor
+//output_mdb: name of output for each molecule's rescoring (temp.mdb will work)
+//cat_mdb: desired name of output database containing all rescored molecules
 
 
 function Close;

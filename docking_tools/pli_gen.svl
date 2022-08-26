@@ -1,6 +1,7 @@
 #svl
 //Commentary by Greg Szwabowski 12/4/2020
-//This script will allow you to generate .png images of all docked poses inside a database, where 'mdb' is the name of your database.
+//This script will allow you to generate .png images of protein-ligand interactions for
+// all docked poses inside a database, where 'mdb' is the name of your database.
 
 function DrawLigandInteractions;
 global function pli_gen [mdb];

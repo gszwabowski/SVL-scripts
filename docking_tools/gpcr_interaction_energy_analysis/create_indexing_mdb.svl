@@ -1,0 +1,37 @@
+// Commentary 8/23/22 GLS
+//
+// This script is used to create a database that indexes the start,
+// end, and .50 residues of each TM domain for ligands docked into GPCR.
+// Use this script after running gen_TM_database.svl and before running
+// get_gpcr_interactions_docked.svl.
+//
+// ARGUMENTS
+// =========
+// mdb: database to import PDBID and index fields from (these are mandatory)
+// prefix: prefix of output database
+
+function db_ImportDB;
+global function create_indexing_mdb [mdb, prefix];
+
+local dst_mdb = tok_cat[prefix, '_tm_indexing.mdb'];
+db_Open [dst_mdb, 'create'];
+
+db_ImportDB [
+        dst_mdb,
+        mdb,
+        ['PDBID', 'index'],
+        ['PDBID', 'index'],
+        ['char', 'int']
+    ];
+
+local i;
+
+for i = 1, 7, 1 loop
+	db_EnsureField [ dst_mdb, tok_cat['TM', totok i, '_start'], 'char' ];
+	db_EnsureField [ dst_mdb, tok_cat['TM_', totok i, '.50'], 'char' ];
+	db_EnsureField [ dst_mdb, tok_cat['TM', totok i, '_end'], 'char' ];
+endloop
+
+write 'Done.\n';
+
+endfunction
