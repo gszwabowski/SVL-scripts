@@ -1,0 +1,54 @@
+// Commentary by GLS 10/7/22
+// For each database file in the current working directory, this
+// function will create a field titled 'Target' in and then prompt
+// for a target name to be written to the Target field for all entries
+// in the database.
+
+local function ShellPrompt [mdb]
+local title_prompt = tok_cat['Enter target name for ', mdb, ':'];
+    local wkey = WindowCreate [
+        name: 'shell',
+        title: 'Target Name Entry',
+        text: ['OK'],
+        onTrigger: ['return'],
+        Text: [
+            name: 'text_field',
+            type: 'char',
+            title: title_prompt
+	]
+    ];
+
+    WindowShow wkey;
+
+    loop
+        local [values, trigger] = WindowWait wkey;
+        if trigger == 'shell' then
+		WindowDestroy wkey;
+		return values.text_field;
+        endif
+	
+    endloop
+endfunction
+
+global function create_target_fields_dir[];
+
+local mdbs = flist [[], '*.mdb'];
+local mdb;
+
+for mdb in mdbs loop
+	// create target field in the database
+	db_EnsureField [mdb, 'Target', 'char'];
+
+	local entries = db_Entries mdb;
+	local entry;
+	
+	// get target name via shell prompt
+	local target_name = ShellPrompt[mdb];
+
+	// loop through entries and write desired target name to the Target field
+	for entry in entries loop
+		db_Write [mdb, entry, tagpoke[[],'Target', string target_name]];
+	endloop
+endloop
+
+endfunction

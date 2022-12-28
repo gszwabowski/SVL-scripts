@@ -1,0 +1,17 @@
+// Commentary by GLS 11/22/2022
+// For each entry selected in the database viewer of a database (mdb),
+// this function will write a specified value (value) entered as a token
+// to a specified 'char' type field (fieldname).
+//
+// ex. command:  rename_selected_charfield_entries ['all_dude_actives.mdb', 'target', 'D3']
+global function rename_selected_charfield_entries [mdb, fieldname, value]
+
+local entries = dbv_SelectedEntries mdb;
+local entry;
+
+for entry in entries loop
+	local entry_record = db_Read[mdb, entry];
+	db_Write [mdb, entry, tagpoke[entry_record, fieldname, string[value]]];
+endloop
+
+endfunction

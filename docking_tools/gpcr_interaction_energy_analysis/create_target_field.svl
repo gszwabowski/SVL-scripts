@@ -1,0 +1,19 @@
+// Commentary by GLS 10/7/22
+// This function is used to create a field titled 'Target' in a 
+// database file (mdb) and write a desired target name (target_name)
+// to the field for all entries in the database.
+
+global function create_target_field [mdb, target_name];
+
+// create target field in the database
+db_EnsureField [mdb, 'Target', 'char'];
+
+local entries = db_Entries mdb;
+local entry;
+
+// loop through entries and write desired target name to the Target field
+for entry in entries loop
+	db_Write [mdb, entry, tagpoke[[],'Target', string target_name]];
+endloop
+
+endfunction

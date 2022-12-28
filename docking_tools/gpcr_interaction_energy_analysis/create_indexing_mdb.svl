@@ -11,16 +11,17 @@
 // prefix: prefix of output database
 
 function db_ImportDB;
+function db_ExportASCII;
 global function create_indexing_mdb [mdb, prefix];
 
 local dst_mdb = tok_cat[prefix, '_tm_indexing.mdb'];
-db_Open [dst_mdb, 'create'];
+local mdb_key = db_Open [dst_mdb, 'create'];
 
 db_ImportDB [
         dst_mdb,
         mdb,
-        ['PDBID', 'index'],
-        ['PDBID', 'index'],
+        ['Target', 'index'],
+        ['Target', 'index'],
         ['char', 'int']
     ];
 
@@ -31,6 +32,21 @@ for i = 1, 7, 1 loop
 	db_EnsureField [ dst_mdb, tok_cat['TM_', totok i, '.50'], 'char' ];
 	db_EnsureField [ dst_mdb, tok_cat['TM', totok i, '_end'], 'char' ];
 endloop
+
+// write mdb to .txt for Excel import
+db_ExportASCII [
+	dst_mdb,
+	tok_cat[fbase dst_mdb, '.txt'],
+	first db_Fields dst_mdb,
+	db_Entries dst_mdb,
+	[
+		delimiter: ','
+	]
+		];
+
+// Delete .mdb file since the .txt will be re-imported
+db_Close mdb_key;
+fdelete dst_mdb;
 
 write 'Done.\n';
 
