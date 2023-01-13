@@ -1,5 +1,5 @@
 # SVL-scripts
-This repository contains scripts I've written in the Scientific Vector Language (SVL) for Molecular Operating Environment. Here is what is contained in each folder:
+This repository contains scripts I've written in the Scientific Vector Language (SVL) for Molecular Operating Environment (MOE). Here is what is contained in each folder:
 + **SBP_tools:** score-based pharmacophore modeling generation/analysis scripts
 + **alignment_tools:** scripts to assist with the alignment of various protein chains
 + **docking_tools:** scripts to assist with MOE ligand docking analysis
