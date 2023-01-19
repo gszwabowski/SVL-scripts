@@ -4,9 +4,10 @@
 // for docked poses. Before using this script, the following steps must be taken:
 //
 // 1. A database containing top scoring poses for each docked ligand must be
-// created. Once created, the 'create_target_fields_dir.svl' script must be
-// used to create a 'Target' field in the database denoting the name of the
-// target that each entry was docked into.
+// created. Once created, the 'create_target_fields_dir.svl' script located in
+// 'extraneous_scripts/' should be used to create a 'Target' field in the database 
+// denoting the name of the Target that each entry was docked into. Alternatively,
+// creation of the 'Target' field can be performed manually.
 //
 // 2. Entries in database containing top scored poses must be given an index number
 // using the loopnumber.svl script.
